@@ -1,0 +1,17 @@
+// swift-tools-version: 6.2
+import PackageDescription
+
+// Command-line tests for the exact production domain/store sources, without Xcode-only macros.
+// The shipping app and persistence/UI tests live in Disciplina.xcodeproj.
+let package = Package(
+    name: "DisciplinaCoreTests",
+    platforms: [.macOS(.v14)],
+    targets: [
+        .target(name: "Disciplina", path: "Disciplina",
+                exclude: ["App", "Data", "Platform", "Features/QuickCapture", "Features/Settings", "Features/Tasks/TaskViews.swift"],
+                sources: ["Domain", "Features/Tasks/TaskStore.swift"]),
+        .testTarget(name: "DisciplinaTests", dependencies: ["Disciplina"], path: "DisciplinaTests",
+                    exclude: ["PersistenceTests.swift"])
+    ],
+    swiftLanguageModes: [.v6]
+)

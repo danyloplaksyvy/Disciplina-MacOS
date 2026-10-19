@@ -1,0 +1,70 @@
+name: macOS validation
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: macos-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build-and-unit-tests:
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+      - name: Verify generated project
+        run: |
+          python3 scripts/generate_project.py
+          git diff --exit-code -- Disciplina.xcodeproj
+      - name: Build application and both test bundles
+        run: |
+          set -o pipefail
+          xcodebuild build-for-testing -project Disciplina.xcodeproj -scheme Disciplina -destination 'platform=macOS,arch=arm64' -derivedDataPath DerivedData -resultBundlePath build.xcresult CODE_SIGN_IDENTITY=- | tee build.log
+      - name: Domain, state, and persistence tests
+        run: |
+          set -o pipefail
+          xcodebuild test-without-building -project Disciplina.xcodeproj -scheme Disciplina -destination 'platform=macOS,arch=arm64' -derivedDataPath DerivedData -only-testing:DisciplinaTests -resultBundlePath unit-tests.xcresult | tee unit-tests.log
+      - name: Package personal development build
+        run: |
+          codesign --verify --deep --strict DerivedData/Build/Products/Debug/Disciplina.app
+          ditto -c -k --sequesterRsrc --keepParent DerivedData/Build/Products/Debug/Disciplina.app Disciplina-arm64-development.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Disciplina-arm64-development
+          path: Disciplina-arm64-development.zip
+          retention-days: 14
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: build-and-unit-test-evidence
+          path: |
+            *.log
+            *.xcresult
+          retention-days: 14
+  ui-tests:
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: UI acceptance tests
+        run: |
+          set -o pipefail
+          xcodebuild test -project Disciplina.xcodeproj -scheme Disciplina -destination 'platform=macOS,arch=arm64' -derivedDataPath DerivedData -only-testing:DisciplinaUITests -resultBundlePath ui-tests.xcresult CODE_SIGN_IDENTITY=- | tee ui-tests.log
+      - name: Failure triage guidance
+        if: failure()
+        run: echo 'Inspect ui-tests.xcresult. Report UI assertions separately from runner login-session or automation-permission failures. Neither counts as a pass.' >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ui-test-evidence
+          path: |
+            ui-tests.log
+            ui-tests.xcresult
+          retention-days: 14
