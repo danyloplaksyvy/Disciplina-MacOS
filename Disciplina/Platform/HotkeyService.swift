@@ -1,7 +1,7 @@
 import KeyboardShortcuts
 
 extension KeyboardShortcuts.Name {
-    static let quickCapture = Self("quickCapture", default: .init(.space, modifiers: [.control, .option]))
+    static let quickCapture = Self("quickCapture", initial: .init(.space, modifiers: [.control, .option]))
 }
 
 @MainActor

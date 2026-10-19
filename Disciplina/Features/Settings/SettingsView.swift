@@ -11,10 +11,10 @@ struct SettingsView: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
             Section("Startup") {
-                Toggle("Launch at login", isOn: Binding(get: { login.enabled }, set: login.setEnabled))
+                Toggle("Launch at login", isOn: Binding(get: { login.enabled }, set: { login.setEnabled($0) }))
                 if login.status == .requiresApproval {
                     Text("Allow Disciplina in System Settings to finish enabling login launch.")
-                    Button("Open Login Items", action: login.openSystemSettings)
+                    Button("Open Login Items") { login.openSystemSettings() }
                 }
                 if let error = login.errorMessage { Text(error).foregroundStyle(.red) }
             }
