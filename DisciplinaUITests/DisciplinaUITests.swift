@@ -33,11 +33,11 @@ final class DisciplinaUITests: XCTestCase {
         app.buttons["Reopen Updated task"].click()
         app.staticTexts["Updated task"].rightClick()
         app.menuItems["Delete…"].click()
-        app.buttons["Cancel"].click()
+        app.windows["main"].sheets.buttons["Cancel"].click()
         XCTAssertTrue(app.staticTexts["Updated task"].exists)
         app.staticTexts["Updated task"].rightClick()
         app.menuItems["Delete…"].click()
-        app.buttons["Delete"].click()
+        app.windows["main"].sheets.buttons["Delete"].click()
         XCTAssertFalse(app.staticTexts["Updated task"].exists)
     }
 
@@ -65,6 +65,16 @@ final class DisciplinaUITests: XCTestCase {
         XCTAssertTrue(capture.waitForExistence(timeout: 3))
         capture.typeText("Captured task\n")
         XCTAssertTrue(app.staticTexts["Captured task"].waitForExistence(timeout: 3))
+    }
+
+    func testCloseAndReopenSingleWindow() {
+        app.typeKey("w", modifierFlags: .command)
+        XCTAssertFalse(app.windows["main"].exists)
+        app.menuBars.menuBarItems["File"].click()
+        app.menuItems["Open Task Window"].click()
+        XCTAssertTrue(app.windows["main"].waitForExistence(timeout: 3))
+        app.typeKey("o", modifierFlags: .command)
+        XCTAssertEqual(app.windows.matching(identifier: "main").count, 1)
     }
 
     func testMainAndPopoverShareTasks() throws {
