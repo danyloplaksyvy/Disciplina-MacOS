@@ -8,6 +8,8 @@ Open this repository's **Actions → macOS validation**, select a successful run
 
 Launch Disciplina to open its task window. Closing the window leaves the app in the menu bar. Press Control–Option–Space to capture a task; configure another shortcut in Settings. Launch at login is off by default and should be enabled only after placing the app in its permanent location. Quit explicitly from the app menu or popover.
 
+The menu bar displays the exact incomplete-task count to the left of the checkmark: “3 left,” “All clear” at zero, or “—” when the count is unavailable. It updates immediately even with the popover closed.
+
 Build artifacts are available only after the build and unit-test job passes. See [validation status](docs/VALIDATION.md) before treating a build as beta-ready.
 
 ## Development
