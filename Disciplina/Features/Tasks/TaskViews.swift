@@ -176,6 +176,7 @@ struct MenuBarTaskView: View {
     @Binding var isPresented: Bool
     let openMain: () -> Void
     @State private var focusToken = 0
+    @State private var popoverWindow: NSWindow?
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Disciplina").font(.headline)
@@ -193,11 +194,38 @@ struct MenuBarTaskView: View {
             }
         }
         .padding(16).frame(width: 360)
-        .onChange(of: isPresented) { if isPresented { focusToken += 1 } }
+        .background(WindowReferenceView { popoverWindow = $0 })
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { notification in
+            guard let window = notification.object as? NSWindow, window === popoverWindow else { return }
+            isPresented = true
+            focusToken += 1
+        }
+        .onChange(of: isPresented) {
+            if isPresented { focusToken += 1 }
+            else { popoverWindow?.orderOut(nil) }
+        }
         .onExitCommand { isPresented = false }
     }
 }
 
 extension Notification.Name {
     static let focusNewTask = Notification.Name("Disciplina.focusNewTask")
+}
+
+// Keep platform window access local to the popover; never close whichever window happens to be key.
+private struct WindowReferenceView: NSViewRepresentable {
+    let receive: (NSWindow?) -> Void
+    func makeNSView(context: Context) -> ReferenceView { ReferenceView(receive: receive) }
+    func updateNSView(_ nsView: ReferenceView, context: Context) {}
+
+    final class ReferenceView: NSView {
+        let receive: (NSWindow?) -> Void
+        init(receive: @escaping (NSWindow?) -> Void) { self.receive = receive; super.init(frame: .zero) }
+        required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            let window = window
+            DispatchQueue.main.async { self.receive(window) }
+        }
+    }
 }

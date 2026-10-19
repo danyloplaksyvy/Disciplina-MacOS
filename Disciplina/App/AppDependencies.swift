@@ -16,6 +16,7 @@ final class AppDependencies {
         guard store == nil else { return }
         do {
             let testing = ProcessInfo.processInfo.arguments.contains("--ui-testing")
+                || ProcessInfo.processInfo.environment["DISCIPLINA_TESTING"] == "1"
             let persistence = try PersistenceController(inMemory: testing)
             let repository = SwiftDataTaskRepository(context: persistence.container.mainContext)
             let store = TaskStore(service: TaskService(repository: repository))

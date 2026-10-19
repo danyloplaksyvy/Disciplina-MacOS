@@ -60,7 +60,7 @@ productsGroup = add('products-group', obj(isa='PBXGroup', children=array(product
 rootGroup = add('root-group', obj(isa='PBXGroup', children=array(groups+[productsGroup]), sourceTree=quote('<group>')))
 configs = []
 for config in ['Debug','Release']:
-    settings = dict(CLANG_ENABLE_MODULES='YES', CLANG_ENABLE_OBJC_ARC='YES', SWIFT_VERSION='6.0', MACOSX_DEPLOYMENT_TARGET='14.0', SDKROOT='macosx', DEBUG_INFORMATION_FORMAT=quote('dwarf' if config=='Debug' else 'dwarf-with-dsym'), SWIFT_OPTIMIZATION_LEVEL=quote('-Onone' if config=='Debug' else '-O'), ENABLE_TESTABILITY='YES' if config=='Debug' else 'NO', SWIFT_ACTIVE_COMPILATION_CONDITIONS=quote('DEBUG $(inherited)' if config=='Debug' else '$(inherited)'))
+    settings = dict(ONLY_ACTIVE_ARCH='YES' if config == 'Debug' else 'NO', CLANG_ENABLE_MODULES='YES', CLANG_ENABLE_OBJC_ARC='YES', SWIFT_VERSION='6.0', MACOSX_DEPLOYMENT_TARGET='14.0', SDKROOT='macosx', DEBUG_INFORMATION_FORMAT=quote('dwarf' if config=='Debug' else 'dwarf-with-dsym'), SWIFT_OPTIMIZATION_LEVEL=quote('-Onone' if config=='Debug' else '-O'), ENABLE_TESTABILITY='YES' if config=='Debug' else 'NO', SWIFT_ACTIVE_COMPILATION_CONDITIONS=quote('DEBUG $(inherited)' if config=='Debug' else '$(inherited)'))
     configs.append(add('project-'+config, obj(isa='XCBuildConfiguration', buildSettings=obj(**settings), name=config)))
 configList = add('project-configs', obj(isa='XCConfigurationList', buildConfigurations=array(configs), defaultConfigurationIsVisible='0', defaultConfigurationName='Release'))
 add('project', obj(isa='PBXProject', attributes=obj(BuildIndependentTargetsInParallel='YES', LastUpgradeCheck='2600'), buildConfigurationList=configList, compatibilityVersion=quote('Xcode 14.0'), developmentRegion='en', hasScannedForEncodings='0', knownRegions='(en, Base,)', mainGroup=rootGroup, packageReferences=array([package]), productRefGroup=productsGroup, projectDirPath=quote(''), projectRoot=quote(''), targets=array(targets)))
@@ -80,7 +80,7 @@ def reference(name):
 <TestAction buildConfiguration="Debug" selectedDebuggerIdentifier="Xcode.DebuggerFoundation.Debugger.LLDB" selectedLauncherIdentifier="Xcode.IDEFoundation.Launcher.LLDB" shouldUseLaunchSchemeArgsEnv="YES"><Testables>
 <TestableReference skipped="NO">{reference('DisciplinaTests')}</TestableReference>
 <TestableReference skipped="NO">{reference('DisciplinaUITests')}</TestableReference>
-</Testables></TestAction>
+</Testables><EnvironmentVariables><EnvironmentVariable key="DISCIPLINA_TESTING" value="1" isEnabled="YES"/></EnvironmentVariables></TestAction>
 <LaunchAction buildConfiguration="Debug" selectedDebuggerIdentifier="Xcode.DebuggerFoundation.Debugger.LLDB" selectedLauncherIdentifier="Xcode.IDEFoundation.Launcher.LLDB" launchStyle="0" useCustomWorkingDirectory="NO" ignoresPersistentStateOnLaunch="NO" debugDocumentVersioning="YES" allowLocationSimulation="YES"><BuildableProductRunnable runnableDebuggingMode="0">{reference('Disciplina')}</BuildableProductRunnable></LaunchAction>
 <ProfileAction buildConfiguration="Release" shouldUseLaunchSchemeArgsEnv="YES" savedToolIdentifier="" useCustomWorkingDirectory="NO" debugDocumentVersioning="YES"><BuildableProductRunnable runnableDebuggingMode="0">{reference('Disciplina')}</BuildableProductRunnable></ProfileAction>
 <AnalyzeAction buildConfiguration="Debug"/><ArchiveAction buildConfiguration="Release" revealArchiveInOrganizer="YES"/>

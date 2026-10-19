@@ -26,7 +26,7 @@ jobs:
       - name: Build application and both test bundles
         run: |
           set -o pipefail
-          xcodebuild build-for-testing -project Disciplina.xcodeproj -scheme Disciplina -destination 'platform=macOS,arch=arm64' -derivedDataPath DerivedData -resultBundlePath build.xcresult CODE_SIGN_IDENTITY=- | tee build.log
+          xcodebuild build-for-testing -project Disciplina.xcodeproj -scheme Disciplina -destination 'platform=macOS,arch=arm64' -derivedDataPath DerivedData -resultBundlePath build.xcresult CODE_SIGN_IDENTITY=- ARCHS=arm64 | tee build.log
       - name: Domain, state, and persistence tests
         run: |
           set -o pipefail
@@ -56,7 +56,7 @@ jobs:
       - name: UI acceptance tests
         run: |
           set -o pipefail
-          xcodebuild test -project Disciplina.xcodeproj -scheme Disciplina -destination 'platform=macOS,arch=arm64' -derivedDataPath DerivedData -only-testing:DisciplinaUITests -resultBundlePath ui-tests.xcresult CODE_SIGN_IDENTITY=- | tee ui-tests.log
+          xcodebuild test -project Disciplina.xcodeproj -scheme Disciplina -destination 'platform=macOS,arch=arm64' -derivedDataPath DerivedData -only-testing:DisciplinaUITests -resultBundlePath ui-tests.xcresult CODE_SIGN_IDENTITY=- ARCHS=arm64 | tee ui-tests.log
       - name: Failure triage guidance
         if: failure()
         run: echo 'Inspect ui-tests.xcresult. Report UI assertions separately from runner login-session or automation-permission failures. Neither counts as a pass.' >> "$GITHUB_STEP_SUMMARY"

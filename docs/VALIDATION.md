@@ -8,7 +8,7 @@ Development host: Apple Silicon macOS, Command Line Tools with Swift 6.3.2, no f
 
 ## Automated checks
 
-- Domain and state: run with `swift test` locally; results recorded after execution.
+- Domain and state: **9 tests passed locally** (including 3 blank-title cases), Swift Testing 1902 / Swift 6.3.2. Run with `bash scripts/test-core.sh`.
 - SwiftData CRUD/rollback and temporary-disk reopen: Xcode unit-test target.
 - UI create/edit/complete/reopen/delete, edit/capture cancellation, capture save, popover sharing: XCUITest target.
 - CI logs and result bundles distinguish compilation errors, assertion failures, and runner UI infrastructure failures. Do not count infrastructure failures as successful tests.
