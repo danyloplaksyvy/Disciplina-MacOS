@@ -8,6 +8,10 @@ final class TaskStore {
     private(set) var errorMessage: String?
     private(set) var needsRefresh = false
 
+    var menuBarStatus: MenuBarStatus {
+        MenuBarStatus(activeCount: needsRefresh ? nil : items.reduce(0) { $0 + ($1.isCompleted ? 0 : 1) })
+    }
+
     var active: [TodoItem] {
         items.filter { !$0.isCompleted }.sorted {
             $0.createdAt == $1.createdAt ? $0.id.uuidString < $1.id.uuidString : $0.createdAt > $1.createdAt

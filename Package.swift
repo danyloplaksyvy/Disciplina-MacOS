@@ -8,8 +8,8 @@ let package = Package(
     platforms: [.macOS(.v14)],
     targets: [
         .target(name: "Disciplina", path: "Disciplina",
-                exclude: ["App", "Data", "Platform", "Features/QuickCapture", "Features/Settings", "Features/Tasks/TaskViews.swift"],
-                sources: ["Domain", "Features/Tasks/TaskStore.swift"]),
+                exclude: ["App", "Data", "Platform", "Features/QuickCapture", "Features/Settings", "Features/Tasks/TaskViews.swift", "Features/Tasks/MenuBarStatusLabel.swift"],
+                sources: ["Domain", "Features/Tasks/TaskStore.swift", "Features/Tasks/MenuBarStatus.swift"]),
         .testTarget(name: "DisciplinaTests", dependencies: ["Disciplina"], path: "DisciplinaTests",
                     exclude: ["PersistenceTests.swift"])
     ],

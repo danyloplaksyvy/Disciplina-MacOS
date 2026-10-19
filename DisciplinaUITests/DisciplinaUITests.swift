@@ -21,16 +21,39 @@ final class DisciplinaUITests: XCTestCase {
         XCTAssertEqual(field.value as? String, "")
     }
 
+    private func expectMenuBarStatus(_ label: String) {
+        let status = app.statusItems.firstMatch
+        XCTAssertTrue(status.waitForExistence(timeout: 5))
+        let expectation = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", label), object: status)
+        XCTAssertEqual(XCTWaiter.wait(for: [expectation], timeout: 5), .completed)
+        // An icon-only fallback is about 24 pt wide. Text must actually be rendered.
+        XCTAssertGreaterThan(status.frame.width, 50)
+    }
+
+    private func attachMenuBarScreenshot(_ name: String) {
+        let attachment = XCTAttachment(screenshot: app.statusItems.firstMatch.screenshot())
+        attachment.name = name
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
     func testCreateEditCompleteReopenDelete() {
+        expectMenuBarStatus("Disciplina: All clear")
+        attachMenuBarScreenshot("menu-bar-all-clear")
         add("UI task")
+        expectMenuBarStatus("Disciplina: 1 active task")
+        attachMenuBarScreenshot("menu-bar-one-task")
         app.staticTexts["UI task"].doubleClick()
         let edit = app.textFields["edit-task"]
         XCTAssertTrue(edit.waitForExistence(timeout: 3))
         edit.typeKey("a", modifierFlags: .command)
         edit.typeText("Updated task\n")
+        expectMenuBarStatus("Disciplina: 1 active task")
         app.buttons["Complete Updated task"].click()
+        expectMenuBarStatus("Disciplina: All clear")
         XCTAssertTrue(app.buttons["Reopen Updated task"].waitForExistence(timeout: 3))
         app.buttons["Reopen Updated task"].click()
+        expectMenuBarStatus("Disciplina: 1 active task")
         app.staticTexts["Updated task"].rightClick()
         app.menuItems["Delete…"].click()
         app.windows["main"].sheets.buttons["Cancel"].click()
@@ -39,6 +62,7 @@ final class DisciplinaUITests: XCTestCase {
         app.menuItems["Delete…"].click()
         app.windows["main"].sheets.buttons["Delete"].click()
         XCTAssertFalse(app.staticTexts["Updated task"].exists)
+        expectMenuBarStatus("Disciplina: All clear")
     }
 
     func testCancelEditingAndCapture() {
@@ -75,6 +99,19 @@ final class DisciplinaUITests: XCTestCase {
         XCTAssertTrue(app.windows["main"].waitForExistence(timeout: 3))
         app.typeKey("o", modifierFlags: .command)
         XCTAssertEqual(app.windows.matching(identifier: "main").count, 1)
+    }
+
+    func testMenuBarCountCrossesDigitBoundaryWhileClosed() {
+        for index in 1...9 { add("Task \(index)") }
+        expectMenuBarStatus("Disciplina: 9 active tasks")
+        attachMenuBarScreenshot("menu-bar-nine-tasks")
+        add("Tenth task")
+        expectMenuBarStatus("Disciplina: 10 active tasks")
+        attachMenuBarScreenshot("menu-bar-ten-tasks")
+        app.statusItems.firstMatch.click()
+        let list = app.descendants(matching: .any)["popover-task-list"].firstMatch
+        XCTAssertTrue(list.waitForExistence(timeout: 3))
+        attachMenuBarScreenshot("menu-bar-selected")
     }
 
     func testMainAndPopoverShareTasks() throws {

@@ -57,6 +57,9 @@ jobs:
         run: |
           set -o pipefail
           xcodebuild test -project Disciplina.xcodeproj -scheme Disciplina -destination 'platform=macOS,arch=arm64' -derivedDataPath DerivedData -only-testing:DisciplinaUITests -resultBundlePath ui-tests.xcresult CODE_SIGN_IDENTITY=- ARCHS=arm64 | tee ui-tests.log
+      - name: Export UI screenshots
+        if: always()
+        run: xcrun xcresulttool export attachments --path ui-tests.xcresult --output-path ui-screenshots
       - name: Failure triage guidance
         if: failure()
         run: echo 'Inspect ui-tests.xcresult. Report UI assertions separately from runner login-session or automation-permission failures. Neither counts as a pass.' >> "$GITHUB_STEP_SUMMARY"
@@ -67,4 +70,5 @@ jobs:
           path: |
             ui-tests.log
             ui-tests.xcresult
+            ui-screenshots/
           retention-days: 14

@@ -26,7 +26,7 @@ struct DisciplinaApp: App {
                 Button("Quick Capture") { dependencies.showCapture() }
             }
         }
-        MenuBarExtra("Disciplina", systemImage: "checkmark.circle", isInserted: .constant(true)) {
+        MenuBarExtra(isInserted: .constant(true)) {
             if let store = dependencies.store {
                 MenuBarTaskView(store: store, isPresented: $popoverPresented, openMain: showMain)
                     .onAppear { popoverPresented = true }
@@ -34,6 +34,8 @@ struct DisciplinaApp: App {
             } else {
                 StartupFailureView(dependencies: dependencies).frame(width: 360)
             }
+        } label: {
+            MenuBarStatusLabel(status: dependencies.store?.menuBarStatus ?? MenuBarStatus(activeCount: nil))
         }
         .menuBarExtraStyle(.window)
         Settings { SettingsView(login: dependencies.login) }
