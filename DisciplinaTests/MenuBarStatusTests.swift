@@ -17,6 +17,15 @@ struct MenuBarStatusTests {
     @Test(arguments: [9, 10, 99, 100, 1000])
     func exactCounts(count: Int) {
         #expect(MenuBarStatus(activeCount: count).text == "\(count) left")
+        let repository = MemoryRepository()
+        let date = Date(timeIntervalSince1970: 0)
+        repository.items = (1..<count).map {
+            TodoItem(id: UUID(), title: "Task \($0)", createdAt: date, updatedAt: date, completedAt: nil)
+        }
+        let store = TaskStore(service: TaskService(repository: repository))
+        #expect(store.menuBarStatus.text == "\(count - 1) left")
+        #expect(store.create(title: "Cross the digit boundary"))
+        #expect(store.menuBarStatus.text == "\(count) left")
     }
 
     @Test func mutationsUpdateCount() throws {

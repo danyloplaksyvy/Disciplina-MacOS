@@ -24,8 +24,12 @@ final class DisciplinaUITests: XCTestCase {
     private func expectMenuBarStatus(_ label: String) {
         let status = app.statusItems.firstMatch
         XCTAssertTrue(status.waitForExistence(timeout: 5))
-        let expectation = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", label), object: status)
-        XCTAssertEqual(XCTWaiter.wait(for: [expectation], timeout: 5), .completed)
+        // AppKit can expose a status button's accessible name as its title instead of label.
+        let expectation = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "label == %@ OR title == %@", label, label), object: status)
+        let result = XCTWaiter.wait(for: [expectation], timeout: 5)
+        attachMenuBarScreenshot("status-\(label)")
+        XCTAssertEqual(result, .completed, status.debugDescription)
         // An icon-only fallback is about 24 pt wide. Text must actually be rendered.
         XCTAssertGreaterThan(status.frame.width, 50)
     }
