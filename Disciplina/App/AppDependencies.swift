@@ -62,6 +62,7 @@ final class AppDependencies {
         let store = TaskStore(service: TaskService(repository: repository))
         self.persistence = persistence; self.store = store
         observeAnnouncements(store)
+        self.capture?.invalidate()
         let capture = QuickCapturePanel(store: store); self.capture = capture
         if (!testing || ProcessInfo.processInfo.arguments.contains("--enable-test-shortcut")), hotkeys == nil {
             hotkeys = HotkeyService { [weak self] in self?.showCapture() }
@@ -79,7 +80,8 @@ final class AppDependencies {
         }
         AppCoordinator.prepareToQuit = { [weak store] in
             guard let store else { return true }
-            if store.timer.failure != nil { store.reload(); if store.timer.failure != nil { return false } }
+            guard store.timer.running != nil || store.timer.failure != nil else { return true }
+            if store.unavailable { store.reload(); if store.unavailable { return false } }
             return store.pause(.appQuit)
         }
         if let openMain, let openSettings { configureMenu(openMain: openMain, openSettings: openSettings) }

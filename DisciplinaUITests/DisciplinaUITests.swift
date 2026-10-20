@@ -68,6 +68,17 @@ final class DisciplinaUITests: XCTestCase {
         expectMenuBarStatus("Disciplina: All clear")
     }
 
+    func testDeletionSupportsCommandZ() {
+        add("Undo target")
+        let list = app.outlines["main-task-list"]
+        list.staticTexts["Undo target"].click()
+        list.staticTexts["Undo target"].rightClick()
+        app.windows["main"].menuItems["Delete"].click()
+        XCTAssertFalse(list.staticTexts["Undo target"].exists)
+        app.typeKey("z", modifierFlags: .command)
+        XCTAssertTrue(list.staticTexts["Undo target"].waitForExistence(timeout: 3))
+    }
+
     func testCancelEditingAndCapture() {
         add("Original title")
         app.staticTexts["Original title"].doubleClick()
@@ -145,6 +156,10 @@ final class DisciplinaUITests: XCTestCase {
         appearance.name = "main-window-running-timer"
         appearance.lifetime = .keepAlways
         add(appearance)
+        app.statusItems.firstMatch.click()
+        attachMenuBarScreenshot("running-timer-selected")
+        XCTAssertTrue(app.buttons["Open Disciplina"].waitForExistence(timeout: 3))
+        app.statusItems.firstMatch.click()
         app.buttons["Pause Timed task"].click()
         expectMenuBarStatus("Disciplina: 1 active task")
         XCTAssertTrue(app.buttons["Resume Timed task"].exists)

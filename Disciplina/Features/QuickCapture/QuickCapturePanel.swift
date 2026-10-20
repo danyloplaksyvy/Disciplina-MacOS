@@ -53,6 +53,12 @@ final class QuickCapturePanel: NSObject, NSWindowDelegate {
 
     init(store: TaskStore) { self.store = store }
 
+    func invalidate() {
+        panel?.delegate = nil
+        panel?.close()
+        panel = nil
+    }
+
     func show() {
         if panel?.isVisible != true {
             previousApp = NSWorkspace.shared.frontmostApplication

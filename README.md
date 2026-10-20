@@ -8,7 +8,9 @@ Open this repository's **Actions → macOS validation**, select a successful run
 
 Launch Disciplina to open its task window. Closing the window leaves the app in the menu bar. Press Control–Option–Space to capture a task; configure another shortcut in Settings. Launch at login is off by default and should be enabled only after placing the app in its permanent location. Quit explicitly from the app menu or popover.
 
-The menu bar displays the exact incomplete-task count to the left of the checkmark: “3 left,” “All clear” at zero, or “—” when the count is unavailable. It updates immediately even with the popover closed.
+In v1.0.1, start a task to track time, pause when you stop working, and resume to create another work session. Only one timer runs at a time. While timing, the menu bar shows a burgundy dot and session time beside the checkmark; otherwise it shows “3 left,” “All clear,” or “—” when state is unavailable. The popover offers quick actions; the main window groups tasks by status and shows session history.
+
+Deleted tasks remain in Settings → Data & Recovery until explicitly deleted permanently. That section also provides JSON export and replace-from-backup restore. Upgrades and restores retain local backups; timers remain paused after sleep or an interrupted run.
 
 Build artifacts are available only after the build and unit-test job passes. See [validation status](docs/VALIDATION.md) before treating a build as beta-ready.
 
@@ -31,7 +33,7 @@ Views → shared `TaskStore` → `TaskService` → `TaskRepository` → SwiftDat
 
 One main-actor model context serves all entry points. The versioned schema and migration plan start at V1. Storage initialization failures are surfaced; the app never falls back to a new empty database. Task data remains in the app's local sandbox; no CloudKit container is configured.
 
-See [PRD](docs/PRD.md), [implementation checklist](docs/IMPLEMENTATION.md), and [manual acceptance](docs/VALIDATION.md).
+See [v1.0.1 specification](docs/PRD-V1.0.1.md), [v1.0.1 engineering notes](docs/V1.0.1-IMPLEMENTATION.md), [original PRD](docs/PRD.md), [implementation checklist](docs/IMPLEMENTATION.md), and [manual acceptance](docs/VALIDATION.md).
 
 ## Distribution and licensing
 
