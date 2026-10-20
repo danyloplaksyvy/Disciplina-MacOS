@@ -9,13 +9,15 @@ struct DisciplinaApp: App {
 
     var body: some Scene {
         Window("Disciplina", id: "main") {
+            Group {
             if let store = dependencies.store {
                 MainTaskWindowView(store: store)
                     .id(ObjectIdentifier(store))
-                    .onAppear { dependencies.configureMenu(openMain: showMain, openSettings: { openSettings() }) }
+
             } else {
                 StartupFailureView(dependencies: dependencies)
             }
+            }.onAppear { dependencies.configureMenu(openMain: showMain, openSettings: { openSettings() }) }
         }
         .defaultSize(width: 860, height: 600)
         .commands {

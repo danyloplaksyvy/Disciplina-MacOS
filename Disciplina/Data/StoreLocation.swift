@@ -84,8 +84,8 @@ final class StoreLocation {
         try repository.commit(normalized)
         let saved = try repository.snapshot()
         try saved.validate()
-        guard Set(saved.tasks.map(\.id)) == Set(normalized.tasks.map(\.id)),
-              Set(saved.sessions.map(\.id)) == Set(normalized.sessions.map(\.id)) else { throw DataError.invalidSnapshot }
+        guard saved.tasks.sorted(by: { $0.id.uuidString < $1.id.uuidString }) == normalized.tasks.sorted(by: { $0.id.uuidString < $1.id.uuidString }),
+              saved.sessions.sorted(by: { $0.id.uuidString < $1.id.uuidString }) == normalized.sessions.sorted(by: { $0.id.uuidString < $1.id.uuidString }) else { throw DataError.invalidSnapshot }
         try beforePublish()
         try publish(url)
         return replacement

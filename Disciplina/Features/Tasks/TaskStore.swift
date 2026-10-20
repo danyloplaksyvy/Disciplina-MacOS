@@ -14,18 +14,23 @@ final class TaskStore {
         if let id = timer.running?.taskID { return items.first { $0.id == id } }
         return inProgress.first
     }
-    var inProgress: [TodoItem] { items.filter { $0.status == .inProgress }.sorted(by: recentlyUpdated) }
-    var todo: [TodoItem] { active.filter { $0.status == .todo } }
+    private(set) var inProgress: [TodoItem] = []
+    private(set) var todo: [TodoItem] = []
+    private(set) var active: [TodoItem] = []
+    private(set) var completed: [TodoItem] = []
+    private var relevantCandidates: [TodoItem] = []
+    private var totals: [UUID: Int64] = [:]
     var relevant: [TodoItem] {
-        Array((inProgress + todo.sorted(by: recentlyUpdated)).filter { $0.id != featured?.id }.prefix(5))
+        Array(relevantCandidates.filter { $0.id != featured?.id }.prefix(5))
     }
     private func recentlyUpdated(_ a: TodoItem, _ b: TodoItem) -> Bool {
         a.updatedAt == b.updatedAt ? a.id.uuidString < b.id.uuidString : a.updatedAt > b.updatedAt
     }
     func total(_ id: UUID) -> Int64 {
-        let saved = sessions.filter { $0.taskID == id }.reduce(Int64(0)) { $0 + $1.accumulatedMilliseconds }
+        let saved = totals[id] ?? 0
         guard let running = timer.running, running.taskID == id else { return saved }
-        return saved + max(0, timer.elapsedMilliseconds - running.accumulatedMilliseconds)
+        let sum = saved.addingReportingOverflow(max(0, timer.elapsedMilliseconds - running.accumulatedMilliseconds))
+        return sum.overflow ? Int64.max : sum.partialValue
     }
     private(set) var items: [TodoItem] = []
     private(set) var errorMessage: String?
@@ -35,15 +40,21 @@ final class TaskStore {
         MenuBarStatus(activeCount: unavailable ? nil : items.reduce(0) { $0 + ($1.isCompleted ? 0 : 1) })
     }
 
-    var active: [TodoItem] {
-        items.filter { !$0.isCompleted }.sorted {
+    private func publish(_ snapshot: TaskSnapshot) {
+        items = snapshot.tasks.filter { $0.deletedAt == nil }
+        deleted = snapshot.tasks.filter { $0.deletedAt != nil }
+        sessions = snapshot.sessions
+        active = items.filter { !$0.isCompleted }.sorted {
             $0.createdAt == $1.createdAt ? $0.id.uuidString < $1.id.uuidString : $0.createdAt > $1.createdAt
         }
-    }
-    var completed: [TodoItem] {
-        items.filter(\.isCompleted).sorted {
+        completed = items.filter(\.isCompleted).sorted {
             $0.completedAt == $1.completedAt ? $0.id.uuidString < $1.id.uuidString : $0.completedAt! > $1.completedAt!
         }
+        inProgress = items.filter { $0.status == .inProgress }.sorted(by: recentlyUpdated)
+        todo = active.filter { $0.status == .todo }
+        relevantCandidates = inProgress + todo.sorted(by: recentlyUpdated)
+        totals = [:]
+        for session in sessions { totals[session.taskID, default: 0] += session.accumulatedMilliseconds }
     }
 
     init(service: TaskService, timer: TimerCoordinator? = nil) {
@@ -58,9 +69,7 @@ final class TaskStore {
         do {
             let snapshot = try service.repository.snapshot()
             try snapshot.validate()
-            items = snapshot.tasks.filter { $0.deletedAt == nil }
-            deleted = snapshot.tasks.filter { $0.deletedAt != nil }
-            sessions = snapshot.sessions
+            publish(snapshot)
             needsRefresh = false; errorMessage = nil
         } catch {
             needsRefresh = true
@@ -123,9 +132,7 @@ final class TaskStore {
         do {
             let snapshot = try service.repository.snapshot()
             try snapshot.validate()
-            items = snapshot.tasks.filter { $0.deletedAt == nil }
-            deleted = snapshot.tasks.filter { $0.deletedAt != nil }
-            sessions = snapshot.sessions
+            publish(snapshot)
             errorMessage = nil
         } catch {
             needsRefresh = true

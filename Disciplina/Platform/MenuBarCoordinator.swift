@@ -6,14 +6,18 @@ import Observation
 final class MenuBarCoordinator: NSObject {
     private let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     private let popover = NSPopover()
-    private let store: TaskStore
+    private let store: TaskStore?
     private var appearanceObserver: NSKeyValueObservation?
-    init(store: TaskStore, openMain: @escaping () -> Void, openSettings: @escaping () -> Void) {
-        self.store = store
+    init(dependencies: AppDependencies, openMain: @escaping () -> Void, openSettings: @escaping () -> Void) {
+        self.store = dependencies.store
         super.init()
         popover.behavior = .transient
-        popover.contentViewController = NSHostingController(rootView: MenuBarTaskView(store: store,
-            openMain: { [weak self] in self?.close(); openMain() }, openSettings: { [weak self] in self?.close(); openSettings() }))
+        if let store {
+            popover.contentViewController = NSHostingController(rootView: MenuBarTaskView(store: store,
+                openMain: { [weak self] in self?.close(); openMain() }, openSettings: { [weak self] in self?.close(); openSettings() }))
+        } else {
+            popover.contentViewController = NSHostingController(rootView: StartupFailureView(dependencies: dependencies).frame(width: 380))
+        }
         item.button?.target = self; item.button?.action = #selector(toggle)
         item.button?.image = NSImage(systemSymbolName: "checkmark.circle", accessibilityDescription: nil)
         item.button?.imagePosition = .imageRight
@@ -31,6 +35,12 @@ final class MenuBarCoordinator: NSObject {
     }
     private func update() {
         guard let button = item.button else { return }
+        guard let store else {
+            button.title = "—"
+            button.setAccessibilityLabel("Disciplina: Task count unavailable")
+            button.toolTip = "Disciplina: Task count unavailable"
+            return
+        }
         let running = !store.unavailable ? store.timer.running : nil
         let title = running == nil ? store.menuBarStatus.text : DurationText.precise(store.timer.elapsedMilliseconds)
         let value = NSMutableAttributedString(string: running == nil ? title : "● \(title)", attributes: [
@@ -55,8 +65,5 @@ final class MenuBarCoordinator: NSObject {
         popover.contentViewController?.view.window?.makeKey()
     }
     func close() { popover.performClose(nil) }
-    deinit {
-        let item = item
-        MainActor.assumeIsolated { NSStatusBar.system.removeStatusItem(item) }
-    }
+    func invalidate() { close(); NSStatusBar.system.removeStatusItem(item) }
 }

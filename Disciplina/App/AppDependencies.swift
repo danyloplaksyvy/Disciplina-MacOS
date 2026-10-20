@@ -82,9 +82,9 @@ final class AppDependencies {
     }
     func configureMenu(openMain: @escaping () -> Void, openSettings: @escaping () -> Void) {
         self.openMain = openMain; self.openSettings = openSettings
-        guard let store else { return }
+        menuBar?.invalidate()
         menuBar = nil
-        menuBar = MenuBarCoordinator(store: store, openMain: openMain, openSettings: openSettings)
+        menuBar = MenuBarCoordinator(dependencies: self, openMain: openMain, openSettings: openSettings)
     }
     func showCapture() { menuBar?.close(); capture?.show() }
     func showBackups() {

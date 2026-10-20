@@ -201,41 +201,66 @@ struct MenuBarTaskView: View {
     let openMain: () -> Void
     let openSettings: () -> Void
     @State private var focusToken = 0
-    private var listHeight: CGFloat { min(CGFloat(store.relevant.count) * 70, 260) }
+    private var maximumHeight: CGFloat { min(600, (NSScreen.main?.visibleFrame.height ?? 800) - 32) }
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            TaskInputView(store: store, focusToken: focusToken)
-            StoreErrorView(store: store)
-            if let item = store.featured {
-                VStack(alignment: .leading, spacing: 6) {
-                    Label(store.timer.running == nil ? "Paused" : "Running", systemImage: store.timer.running == nil ? "pause" : "play.fill")
-                        .foregroundStyle(store.timer.running == nil ? Color.secondary : Theme.accent)
-                    Text(item.title).font(.headline).lineLimit(2)
-                    if store.timer.running != nil { Text(DurationText.precise(store.timer.elapsedMilliseconds)).font(.title.monospacedDigit()) }
-                    Text("Total \(DurationText.concise(store.total(item.id)))").font(.caption)
-                    HStack {
-                        TimerControls(item: item, store: store)
-                        Button("Complete") { store.setCompleted(id: item.id, isCompleted: true) }
+        QuickActionsLayout(maximumHeight: maximumHeight - 32,
+                           desiredListHeight: min(CGFloat(store.relevant.count) * 70, 260)) {
+            VStack(alignment: .leading, spacing: 12) {
+                TaskInputView(store: store, focusToken: focusToken)
+                StoreErrorView(store: store)
+                if let item = store.featured {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Label(store.timer.running == nil ? "Paused" : "Running", systemImage: store.timer.running == nil ? "pause" : "play.fill")
+                            .foregroundStyle(store.timer.running == nil ? Color.secondary : Theme.accent)
+                        Text(item.title).font(.headline).lineLimit(2)
+                        if store.timer.running != nil { Text(DurationText.precise(store.timer.elapsedMilliseconds)).font(.title.monospacedDigit()) }
+                        Text("Total \(DurationText.concise(store.total(item.id)))").font(.caption)
+                        HStack {
+                            TimerControls(item: item, store: store)
+                            Button("Complete") { store.setCompleted(id: item.id, isCompleted: true) }
+                        }
                     }
+                } else { Text("Ready when you are").foregroundStyle(.secondary) }
+            }.fixedSize(horizontal: false, vertical: true)
+            ScrollView {
+                VStack { ForEach(store.relevant) { TaskRowView(item: $0, store: store, compact: true) } }
+            }.accessibilityIdentifier("popover-task-list")
+            VStack(alignment: .leading, spacing: 8) {
+                if let notice = store.notice { Text(notice).font(.caption).lineLimit(2) }
+                Divider()
+                HStack {
+                    Button("Open Disciplina", action: openMain)
+                    Spacer()
+                    Button(action: openSettings) { Image(systemName: "gearshape") }.accessibilityLabel("Settings")
+                    Button("Quit") { NSApp.terminate(nil) }
                 }
-            } else { Text("Ready when you are").foregroundStyle(.secondary) }
-            if !store.relevant.isEmpty {
-                ScrollView {
-                    VStack { ForEach(store.relevant) { TaskRowView(item: $0, store: store, compact: true) } }
-                }.frame(height: listHeight).accessibilityIdentifier("popover-task-list")
-            }
-            if let notice = store.notice { Text(notice).font(.caption).lineLimit(2) }
-            Divider()
-            HStack {
-                Button("Open Disciplina", action: openMain)
-                Spacer()
-                Button(action: openSettings) { Image(systemName: "gearshape") }.accessibilityLabel("Settings")
-                Button("Quit") { NSApp.terminate(nil) }
-            }
-        }.padding(16).frame(width: 380)
-            .frame(maxHeight: min(600, (NSScreen.main?.visibleFrame.height ?? 800) - 32))
-            .tint(Theme.accent)
+            }.fixedSize(horizontal: false, vertical: true)
+        }.padding(16).frame(width: 380).tint(Theme.accent)
             .onAppear { focusToken += 1 }
+    }
+}
+
+/// Reserve measured chrome first; only the task region receives the remaining height.
+private struct QuickActionsLayout: Layout {
+    let maximumHeight: CGFloat
+    let desiredListHeight: CGFloat
+    private let spacing: CGFloat = 12
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let width = proposal.width ?? 348
+        let fixed = subviews[0].sizeThatFits(.init(width: width, height: nil)).height
+            + subviews[2].sizeThatFits(.init(width: width, height: nil)).height
+        let gaps = desiredListHeight == 0 ? spacing : spacing * 2
+        return CGSize(width: width, height: min(maximumHeight, fixed + gaps + desiredListHeight))
+    }
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let width = bounds.width
+        let top = subviews[0].sizeThatFits(.init(width: width, height: nil)).height
+        let bottom = subviews[2].sizeThatFits(.init(width: width, height: nil)).height
+        let gaps = desiredListHeight == 0 ? spacing : spacing * 2
+        let list = max(0, bounds.height - top - bottom - gaps)
+        subviews[0].place(at: bounds.origin, proposal: .init(width: width, height: top))
+        subviews[1].place(at: CGPoint(x: bounds.minX, y: bounds.minY + top + spacing), proposal: .init(width: width, height: list))
+        subviews[2].place(at: CGPoint(x: bounds.minX, y: bounds.maxY - bottom), proposal: .init(width: width, height: bottom))
     }
 }
 

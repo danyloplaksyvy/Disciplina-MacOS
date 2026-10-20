@@ -13,9 +13,9 @@ import Testing
 @Suite @MainActor struct TimerTests {
     func fixture() throws -> (MemoryRepository, FakeTime, TimerCoordinator, UUID, UUID) {
         let repository = MemoryRepository()
-        let service = TaskService(repository: repository)
-        try service.create(title: "A"); try service.create(title: "B")
         let clock = FakeTime()
+        let service = TaskService(repository: repository, now: { clock.date })
+        try service.create(title: "A"); try service.create(title: "B")
         let timer = TimerCoordinator(repository: repository, sample: clock.sample)
         return (repository, clock, timer, repository.items[0].id, repository.items[1].id)
     }
