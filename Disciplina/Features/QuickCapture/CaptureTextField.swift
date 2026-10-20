@@ -40,7 +40,7 @@ struct CaptureTextField: NSViewRepresentable {
         @objc private func windowBecameKey(_ notification: Notification) { requestFocus() }
         func requestFocus() {
             guard let window, window.isKeyWindow else { return }
-            if window.firstResponder !== currentEditor() { window.makeFirstResponder(self) }
+            if currentEditor() == nil || window.firstResponder !== currentEditor() { window.makeFirstResponder(self) }
         }
     }
     final class Coordinator: NSObject, NSTextFieldDelegate {

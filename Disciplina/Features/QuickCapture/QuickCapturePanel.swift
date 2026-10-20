@@ -30,7 +30,7 @@ struct QuickCaptureView: View {
                 Text("↵ Save task   ·   Esc Cancel").font(.caption).foregroundStyle(.secondary)
                 Spacer()
                 Button("Save task", action: save)
-                    .disabled(store.needsRefresh || draft.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .disabled(store.unavailable || draft.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
         }.padding(24).frame(width: 500)
             .onAppear { focused = true }

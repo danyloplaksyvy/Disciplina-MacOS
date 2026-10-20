@@ -97,10 +97,18 @@ final class TaskStore {
     @discardableResult func start(_ id: UUID) -> Bool {
         let previous = timer.running.flatMap { running in items.first { $0.id == running.taskID } }
         let result = mutate { try timer.start(taskID: id) }
-        if result, let previous, previous.id != id { notice = "Paused \(previous.title) · Started \(items.first { $0.id == id }?.title ?? "task")" }
+        if result {
+            let title = items.first { $0.id == id }?.title ?? "task"
+            notice = previous != nil && previous?.id != id ? "Paused \(previous!.title) · Started \(title)" : "Started \(title)"
+        }
         return result
     }
-    @discardableResult func pause(_ reason: SessionEndReason = .paused) -> Bool { mutate { try timer.pause(reason: reason) } }
+    @discardableResult func pause(_ reason: SessionEndReason = .paused) -> Bool {
+        let wasRunning = timer.running != nil
+        let result = mutate { try timer.pause(reason: reason) }
+        if result && wasRunning { notice = "Timer paused." }
+        return result
+    }
     @discardableResult func setStatus(_ id: UUID, _ status: TaskStatus) -> Bool { mutate { try timer.setStatus(id: id, status: status) } }
     @discardableResult func restore(_ id: UUID) -> Bool {
         if items.contains(where: { $0.id == id }) { return true }

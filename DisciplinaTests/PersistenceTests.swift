@@ -57,14 +57,16 @@ struct PersistenceTests {
         #expect(try SwiftDataTaskRepository(context: reopened.container.mainContext).fetchAll().isEmpty)
         #expect(TaskMigrationPlan.schemas.count == 2)
     }
-    @Test func migratesRealV1StoreAndKeepsOriginal() throws {
+    @Test(arguments: [0, 2, 1000]) func migratesRealV1StoreAndKeepsOriginal(count: Int) throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
         let original = root.appendingPathComponent("default.store")
         let date = Date(timeIntervalSince1970: 123)
-        let items = [TodoItem(id: UUID(), title: "Legacy active", createdAt: date, updatedAt: date, completedAt: nil),
-                     TodoItem(id: UUID(), title: "Legacy completed", createdAt: date, updatedAt: date, completedAt: date)]
+        let items = (0..<count).map { index in
+            TodoItem(id: UUID(), title: "Legacy \(index)", createdAt: date, updatedAt: date,
+                     completedAt: index % 2 == 0 ? nil : date)
+        }
         let schema = Schema(versionedSchema: TaskSchemaV1.self)
         let old = try ModelContainer(for: schema, configurations: [ModelConfiguration(schema: schema, url: original, cloudKitDatabase: .none)])
         old.mainContext.autosaveEnabled = false
@@ -75,9 +77,9 @@ struct PersistenceTests {
         let migrated = try location.open()
         let state = try SwiftDataTaskRepository(context: migrated.container.mainContext).snapshot()
         #expect(Set(state.tasks.map(\.id)) == Set(items.map(\.id)))
-        #expect(state.tasks.first { $0.completedAt != nil }?.status == .completed)
+        if count > 1 { #expect(state.tasks.first { $0.completedAt != nil }?.status == .completed) }
         #expect(state.sessions.isEmpty)
-        #expect(try old.mainContext.fetch(FetchDescriptor<TaskSchemaV1.TaskRecord>()).count == 2)
+        #expect(try old.mainContext.fetch(FetchDescriptor<TaskSchemaV1.TaskRecord>()).count == count)
         #expect(try location.open().url == migrated.url)
     }
 
@@ -99,6 +101,19 @@ struct PersistenceTests {
         #expect(replacement.url != current.url)
         #expect(try location.open().url == replacement.url)
         #expect(try repo.snapshot() == original)
+    }
+
+    @Test func corruptMigrationNeverPublishesEmptyStore() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let original = root.appendingPathComponent("default.store")
+        let bytes = Data("Not a database".utf8)
+        try bytes.write(to: original)
+        let location = try StoreLocation(root: root)
+        #expect(throws: (any Error).self) { _ = try location.open() }
+        #expect(try Data(contentsOf: original) == bytes)
+        #expect(!FileManager.default.fileExists(atPath: root.appendingPathComponent("Disciplina-store.json").path))
     }
 
     @Test func thousandTasks() throws {

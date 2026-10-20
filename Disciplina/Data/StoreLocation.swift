@@ -59,8 +59,11 @@ final class StoreLocation {
         var expected: [TodoItem]?
         if FileManager.default.fileExists(atPath: legacy.path) {
             let backup = try backup(legacy)
-            // Read the immutable V1 snapshot, never the user's active database.
-            expected = try readV1(backup)
+            // Core Data may create SQLite sidecars even for inspection. Give it a
+            // disposable copy so the retained backup stays untouched.
+            let inspection = try newURL()
+            try DatabaseBackup.copy(from: backup, to: inspection)
+            expected = try readV1(inspection)
             try DatabaseBackup.copy(from: backup, to: target)
         }
         let persistence = try PersistenceController(url: target)
@@ -93,7 +96,7 @@ final class StoreLocation {
 
     private func readV1(_ url: URL) throws -> [TodoItem] {
         let schema = Schema(versionedSchema: TaskSchemaV1.self)
-        let configuration = ModelConfiguration(schema: schema, url: url, allowsSave: false, cloudKitDatabase: .none)
+        let configuration = ModelConfiguration(schema: schema, url: url, cloudKitDatabase: .none)
         let container = try ModelContainer(for: schema, configurations: [configuration])
         return try container.mainContext.fetch(FetchDescriptor<TaskSchemaV1.TaskRecord>()).map(\.item)
     }

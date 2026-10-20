@@ -2,10 +2,16 @@ import AppKit
 import SwiftUI
 import Observation
 
+@MainActor @Observable
+final class PopoverMetrics {
+    var maximumHeight: CGFloat = 600
+}
+
 @MainActor
 final class MenuBarCoordinator: NSObject {
     private let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     private let popover = NSPopover()
+    private let metrics = PopoverMetrics()
     private let store: TaskStore?
     private var appearanceObserver: NSKeyValueObservation?
     init(dependencies: AppDependencies, openMain: @escaping () -> Void, openSettings: @escaping () -> Void) {
@@ -13,7 +19,7 @@ final class MenuBarCoordinator: NSObject {
         super.init()
         popover.behavior = .transient
         if let store {
-            popover.contentViewController = NSHostingController(rootView: MenuBarTaskView(store: store,
+            popover.contentViewController = NSHostingController(rootView: MenuBarTaskView(store: store, metrics: metrics,
                 openMain: { [weak self] in self?.close(); openMain() }, openSettings: { [weak self] in self?.close(); openSettings() }))
         } else {
             popover.contentViewController = NSHostingController(rootView: StartupFailureView(dependencies: dependencies).frame(width: 380))
@@ -61,6 +67,7 @@ final class MenuBarCoordinator: NSObject {
     @objc private func toggle() {
         if popover.isShown { close(); return }
         guard let button = item.button else { return }
+        metrics.maximumHeight = min(600, (button.window?.screen?.visibleFrame.height ?? 800) - 32)
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
         popover.contentViewController?.view.window?.makeKey()
     }

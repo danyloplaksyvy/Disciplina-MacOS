@@ -126,6 +126,35 @@ import Testing
         var orphan = snapshot; orphan.tasks.removeAll()
         #expect(throws: (any Error).self) { try orphan.validate() }
     }
+    @Test func sleepQuitAndResetPreserveHistory() throws {
+        for reason in [SessionEndReason.systemSleep, .appQuit] {
+            let (repo, clock, timer, a, _) = try fixture()
+            try timer.start(taskID: a); clock.advance(2); try timer.pause(reason: reason)
+            #expect(repo.sessions[0].endReason == reason)
+            #expect(repo.sessions[0].accumulatedMilliseconds == 2000)
+        }
+        let (repo, clock, timer, a, _) = try fixture()
+        try timer.start(taskID: a); clock.advance(3); try timer.setStatus(id: a, status: .todo)
+        #expect(repo.sessions[0].endReason == .movedToTodo)
+        #expect(repo.sessions[0].accumulatedMilliseconds == 3000)
+        #expect(repo.items[0].status == .todo)
+        #expect(timer.running == nil)
+    }
+    @Test func snapshotRejectsTwoTimersAndOverflow() throws {
+        let (repo, _, timer, a, b) = try fixture()
+        try timer.start(taskID: a)
+        var state = try repo.snapshot()
+        state.tasks[1].status = .inProgress
+        state.sessions.append(WorkSession(id: UUID(), taskID: b, startedAt: Date(), lastCheckpointAt: Date()))
+        #expect(throws: (any Error).self) { try state.validate() }
+        state.closeInterrupted()
+        state.sessions[0].accumulatedMilliseconds = Int64.max
+        state.sessions.append(WorkSession(id: UUID(), taskID: a, startedAt: Date(), endedAt: Date(),
+                                          accumulatedMilliseconds: 1, lastCheckpointAt: Date(), endReason: .paused))
+        #expect(throws: (any Error).self) { try state.validate() }
+        #expect(throws: (any Error).self) { _ = try BackupDocument.decode(Data("{}".utf8)) }
+    }
+
     @Test func expandedHours() {
         #expect(DurationText.precise(360000000) == "100:00:00")
         #expect(DurationText.precise(0) == "00:00:00")

@@ -59,12 +59,12 @@ final class DisciplinaUITests: XCTestCase {
         app.buttons["Reopen Updated task"].click()
         expectMenuBarStatus("Disciplina: 1 active task")
         app.staticTexts["Updated task"].rightClick()
-        app.menuItems["Delete"].click()
+        app.windows["main"].menuItems["Delete"].click()
         XCTAssertFalse(app.staticTexts["Updated task"].exists)
         app.buttons["Undo"].click()
         XCTAssertTrue(app.staticTexts["Updated task"].exists)
         app.staticTexts["Updated task"].rightClick()
-        app.menuItems["Delete"].click()
+        app.windows["main"].menuItems["Delete"].click()
         expectMenuBarStatus("Disciplina: All clear")
     }
 

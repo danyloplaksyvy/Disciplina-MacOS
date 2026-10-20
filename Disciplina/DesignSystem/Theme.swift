@@ -11,3 +11,18 @@ enum Theme {
 extension TaskStatus {
     var title: String { switch self { case .todo: "To Do"; case .inProgress: "In Progress"; case .completed: "Completed" } }
 }
+
+extension SessionEndReason {
+    var title: String {
+        switch self {
+        case .paused: "Paused"
+        case .switchedTask: "Switched task"
+        case .completed: "Completed"
+        case .movedToTodo: "Moved to To Do"
+        case .deleted: "Deleted"
+        case .systemSleep: "System sleep"
+        case .appQuit: "App quit"
+        case .interrupted: "Interrupted"
+        }
+    }
+}

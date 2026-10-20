@@ -17,6 +17,7 @@ final class AppDependencies {
     private var sleepObserver: NSObjectProtocol?
     private var openMain: (() -> Void)?
     private var openSettings: (() -> Void)?
+    private var lastAnnouncement: String?
     var pendingRestore: BackupDocument?
     var shortcutUnavailable: Bool { !KeyboardShortcuts.isEnabled(for: .quickCapture) || KeyboardShortcuts.getShortcut(for: .quickCapture) == nil }
 
@@ -60,6 +61,7 @@ final class AppDependencies {
         let repository = SwiftDataTaskRepository(context: persistence.container.mainContext)
         let store = TaskStore(service: TaskService(repository: repository))
         self.persistence = persistence; self.store = store
+        observeAnnouncements(store)
         let capture = QuickCapturePanel(store: store); self.capture = capture
         if !testing, hotkeys == nil { hotkeys = HotkeyService { [weak self] in self?.showCapture() } }
         ticker = Task { @MainActor [weak store] in
@@ -80,6 +82,22 @@ final class AppDependencies {
         }
         if let openMain, let openSettings { configureMenu(openMain: openMain, openSettings: openSettings) }
     }
+    private func observeAnnouncements(_ store: TaskStore) {
+        withObservationTracking {
+            let message = store.timer.failure ?? store.errorMessage ?? store.notice
+            if let message, message != lastAnnouncement {
+                NSAccessibility.post(element: NSApp!, notification: .announcementRequested,
+                                     userInfo: [.announcement: message, .priority: NSAccessibilityPriorityLevel.medium.rawValue])
+            }
+            lastAnnouncement = message
+        } onChange: { [weak self, weak store] in
+            Task { @MainActor in
+                guard let self, let store, self.store === store else { return }
+                self.observeAnnouncements(store)
+            }
+        }
+    }
+
     func configureMenu(openMain: @escaping () -> Void, openSettings: @escaping () -> Void) {
         self.openMain = openMain; self.openSettings = openSettings
         menuBar?.invalidate()

@@ -134,7 +134,7 @@ struct TaskDetailsView: View {
                         Text(session.startedAt.formatted())
                         Text(session.endedAt.map { "Ended \($0.formatted())" } ?? "Running")
                         Text(DurationText.precise(session.id == store.timer.running?.id ? store.timer.elapsedMilliseconds : session.accumulatedMilliseconds))
-                        if let reason = session.endReason { Text(reason.rawValue).foregroundStyle(.secondary) }
+                        if let reason = session.endReason { Text(reason.title).foregroundStyle(.secondary) }
                     }.font(.caption).padding(.vertical, 5)
                 }
             }.padding().frame(maxWidth: .infinity, alignment: .leading)
@@ -198,10 +198,11 @@ struct MainTaskWindowView: View {
 
 struct MenuBarTaskView: View {
     let store: TaskStore
+    let metrics: PopoverMetrics
     let openMain: () -> Void
     let openSettings: () -> Void
     @State private var focusToken = 0
-    private var maximumHeight: CGFloat { min(600, (NSScreen.main?.visibleFrame.height ?? 800) - 32) }
+    private var maximumHeight: CGFloat { metrics.maximumHeight }
     var body: some View {
         QuickActionsLayout(maximumHeight: maximumHeight - 32,
                            desiredListHeight: min(CGFloat(store.relevant.count) * 70, 260)) {
