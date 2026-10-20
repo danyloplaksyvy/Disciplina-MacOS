@@ -1,0 +1,189 @@
+import Foundation
+import Observation
+
+struct TimeSample {
+    let awake: Double
+    let continuous: Double
+    let date: Date
+}
+
+@MainActor
+final class TimeSource {
+    private let awakeOrigin = SuspendingClock.now
+    private let continuousOrigin = ContinuousClock.now
+    func sample() -> TimeSample {
+        func seconds(_ duration: Duration) -> Double {
+            let parts = duration.components
+            return Double(parts.seconds) + Double(parts.attoseconds) / 1e18
+        }
+        return TimeSample(awake: seconds(awakeOrigin.duration(to: .now)),
+                          continuous: seconds(continuousOrigin.duration(to: .now)), date: Date())
+    }
+}
+
+@MainActor @Observable
+final class TimerCoordinator {
+    private let repository: any TaskRepository
+    private let sample: () -> TimeSample
+    private let makeID: () -> UUID
+    private var trusted: TimeSample?
+    private(set) var running: WorkSession?
+    private(set) var elapsedMilliseconds: Int64 = 0
+    private(set) var failure: String?
+    var onCommit: (() -> Void)?
+    var watchdogSeconds: Double = 15
+
+    init(repository: any TaskRepository, sample: (() -> TimeSample)? = nil,
+         makeID: @escaping () -> UUID = UUID.init) {
+        self.repository = repository
+        let source = TimeSource()
+        self.sample = sample ?? { source.sample() }
+        self.makeID = makeID
+    }
+
+    func recover() throws {
+        do {
+        var state = try repository.snapshot()
+        try state.validate()
+        if state.sessions.contains(where: { $0.endedAt == nil }) {
+            state.closeInterrupted()
+            try repository.commit(state)
+        }
+        running = nil; trusted = nil; elapsedMilliseconds = 0; failure = nil
+        } catch { freeze(error); throw error }
+    }
+
+    private func duration(at now: TimeSample) throws -> Int64 {
+        guard let running, let trusted else { return 0 }
+        let awake = now.awake - trusted.awake
+        let continuous = now.continuous - trusted.continuous
+        guard awake >= 0, continuous >= 0, continuous <= watchdogSeconds,
+              continuous - awake < 1 else { throw DataError.timerUnavailable }
+        let delta = awake * 1000
+        guard delta.isFinite, delta < Double(Int64.max) else { throw DataError.invalidSnapshot }
+        let sum = running.accumulatedMilliseconds.addingReportingOverflow(Int64(delta))
+        guard !sum.overflow else { throw DataError.invalidSnapshot }
+        return sum.partialValue
+    }
+
+    /// One presentation tick. Only checkpoint boundaries write to disk.
+    func tick() {
+        guard running != nil, failure == nil else { return }
+        let now = sample()
+        do {
+            elapsedMilliseconds = try duration(at: now)
+            if let trusted, now.continuous - trusted.continuous >= 5 {
+                try checkpoint(at: now)
+                onCommit?()
+            }
+        } catch {
+            if (error as? DataError) != nil {
+                do { try interrupt() } catch { freeze(error) }
+            } else { freeze(error) }
+        }
+    }
+
+    private func freeze(_ error: Error) {
+        elapsedMilliseconds = running?.accumulatedMilliseconds ?? 0
+        failure = "Timing stopped. \(error.localizedDescription)"
+    }
+
+    private func interrupt() throws {
+        var state = try repository.snapshot()
+        state.closeInterrupted()
+        try repository.commit(state)
+        running = nil; trusted = nil; elapsedMilliseconds = 0
+        onCommit?()
+    }
+
+    private func checkpoint(at now: TimeSample) throws {
+        guard let running else { return }
+        var state = try repository.snapshot()
+        guard let index = state.sessions.firstIndex(where: { $0.id == running.id }) else { throw DataError.invalidSnapshot }
+        state.sessions[index].accumulatedMilliseconds = try duration(at: now)
+        state.sessions[index].lastCheckpointAt = now.date
+        try repository.commit(state)
+        self.running = state.sessions[index]; trusted = now
+    }
+
+    /// Includes closure of the current interval in the same transaction as the command.
+    private func transition(reason: SessionEndReason, change: (inout TaskSnapshot, TimeSample) throws -> UUID?) throws {
+        guard failure == nil else { throw DataError.timerUnavailable }
+        let now = sample()
+        var state = try repository.snapshot()
+        if let running, let index = state.sessions.firstIndex(where: { $0.id == running.id }) {
+            do {
+                state.sessions[index].accumulatedMilliseconds = try duration(at: now)
+                state.sessions[index].lastCheckpointAt = now.date
+                state.sessions[index].endedAt = now.date
+                state.sessions[index].endReason = reason
+            } catch {
+                // An untrusted gap contributes no additional duration.
+                state.sessions[index].endedAt = state.sessions[index].lastCheckpointAt ?? running.startedAt
+                state.sessions[index].endReason = .interrupted
+            }
+        }
+        if let taskID = running?.taskID, let index = state.tasks.firstIndex(where: { $0.id == taskID }) {
+            state.tasks[index].updatedAt = now.date
+        }
+        let nextID = try change(&state, now)
+        try state.validate()
+        try repository.commit(state)
+        running = nextID.flatMap { id in state.sessions.first { $0.id == id } }
+        trusted = running == nil ? nil : now
+        elapsedMilliseconds = running?.accumulatedMilliseconds ?? 0
+    }
+
+    func start(taskID: UUID) throws {
+        guard running?.taskID != taskID else { return }
+        try transition(reason: .switchedTask) { state, now in
+            guard let index = state.tasks.firstIndex(where: { $0.id == taskID && $0.deletedAt == nil }),
+                  state.tasks[index].status != .completed else { throw TaskError.notFound }
+            state.tasks[index].status = .inProgress
+            state.tasks[index].updatedAt = now.date
+            let id = makeID()
+            state.sessions.append(WorkSession(id: id, taskID: taskID, startedAt: now.date, lastCheckpointAt: now.date))
+            return id
+        }
+    }
+
+    func pause(reason: SessionEndReason = .paused) throws {
+        guard running != nil else { return }
+        do { try transition(reason: reason) { _, _ in nil } }
+        catch {
+            if reason == .systemSleep || reason == .appQuit { freeze(error) }
+            throw error
+        }
+    }
+
+    func setStatus(id: UUID, status: TaskStatus) throws {
+        var state = try repository.snapshot()
+        guard let index = state.tasks.firstIndex(where: { $0.id == id && $0.deletedAt == nil }) else { throw TaskError.notFound }
+        guard state.tasks[index].status != status else { return }
+        let change: (inout TaskSnapshot, TimeSample) throws -> UUID? = { state, now in
+            state.tasks[index].status = status
+            state.tasks[index].completedAt = status == .completed ? now.date : nil
+            state.tasks[index].updatedAt = now.date
+            return nil
+        }
+        if running?.taskID == id {
+            try transition(reason: status == .completed ? .completed : .movedToTodo, change: change)
+        } else {
+            _ = try change(&state, sample()); try repository.commit(state)
+        }
+    }
+
+    func delete(id: UUID) throws {
+        var state = try repository.snapshot()
+        guard let index = state.tasks.firstIndex(where: { $0.id == id && $0.deletedAt == nil }) else { throw TaskError.notFound }
+        if running?.taskID == id {
+            try transition(reason: .deleted) { state, now in
+                state.tasks[index].deletedAt = now.date; state.tasks[index].updatedAt = now.date
+                return nil
+            }
+        } else {
+            state.tasks[index].deletedAt = sample().date
+            try repository.commit(state)
+        }
+    }
+}

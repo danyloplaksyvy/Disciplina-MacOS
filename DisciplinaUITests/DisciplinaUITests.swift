@@ -59,13 +59,12 @@ final class DisciplinaUITests: XCTestCase {
         app.buttons["Reopen Updated task"].click()
         expectMenuBarStatus("Disciplina: 1 active task")
         app.staticTexts["Updated task"].rightClick()
-        app.menuItems["Delete…"].click()
-        app.windows["main"].sheets.buttons["Cancel"].click()
+        app.menuItems["Delete"].click()
+        XCTAssertFalse(app.staticTexts["Updated task"].exists)
+        app.buttons["Undo"].click()
         XCTAssertTrue(app.staticTexts["Updated task"].exists)
         app.staticTexts["Updated task"].rightClick()
-        app.menuItems["Delete…"].click()
-        app.windows["main"].sheets.buttons["Delete"].click()
-        XCTAssertFalse(app.staticTexts["Updated task"].exists)
+        app.menuItems["Delete"].click()
         expectMenuBarStatus("Disciplina: All clear")
     }
 
@@ -91,7 +90,7 @@ final class DisciplinaUITests: XCTestCase {
         app.menuItems["Quick Capture"].click()
         let capture = app.textFields["capture-task"]
         XCTAssertTrue(capture.waitForExistence(timeout: 3))
-        capture.typeText("Captured task\n")
+        app.typeText("Captured task\n")
         XCTAssertTrue(app.staticTexts["Captured task"].waitForExistence(timeout: 3))
     }
 
@@ -118,6 +117,16 @@ final class DisciplinaUITests: XCTestCase {
         attachMenuBarScreenshot("menu-bar-selected")
     }
 
+    func testTimerLabelAndPauseRestoreCount() {
+        add("Timed task")
+        app.buttons["Start Timed task"].click()
+        expectMenuBarStatus("Disciplina: Timing Timed task")
+        attachMenuBarScreenshot("running-timer-dot")
+        app.buttons["Pause Timed task"].click()
+        expectMenuBarStatus("Disciplina: 1 active task")
+        XCTAssertTrue(app.buttons["Resume Timed task"].exists)
+    }
+
     func testMainAndPopoverShareTasks() throws {
         add("Shared task")
         let statusItem = app.statusItems.firstMatch
@@ -127,7 +136,7 @@ final class DisciplinaUITests: XCTestCase {
         XCTAssertTrue(list.waitForExistence(timeout: 3))
         XCTAssertTrue(list.staticTexts["Shared task"].exists)
         list.buttons["Complete Shared task"].click()
-        app.buttons["Open full app"].click()
+        app.buttons["Open Disciplina"].click()
         XCTAssertTrue(app.buttons["Reopen Shared task"].waitForExistence(timeout: 3))
     }
 }

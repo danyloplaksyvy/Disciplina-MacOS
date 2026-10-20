@@ -55,8 +55,32 @@ struct PersistenceTests {
         try repo.delete(id: id)
         let reopened = try PersistenceController(url: url)
         #expect(try SwiftDataTaskRepository(context: reopened.container.mainContext).fetchAll().isEmpty)
-        #expect(TaskMigrationPlan.schemas.count == 1)
+        #expect(TaskMigrationPlan.schemas.count == 2)
     }
+    @Test func migratesRealV1StoreAndKeepsOriginal() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let original = root.appendingPathComponent("default.store")
+        let date = Date(timeIntervalSince1970: 123)
+        let items = [TodoItem(id: UUID(), title: "Legacy active", createdAt: date, updatedAt: date, completedAt: nil),
+                     TodoItem(id: UUID(), title: "Legacy completed", createdAt: date, updatedAt: date, completedAt: date)]
+        let schema = Schema(versionedSchema: TaskSchemaV1.self)
+        let old = try ModelContainer(for: schema, configurations: [ModelConfiguration(schema: schema, url: original, cloudKitDatabase: .none)])
+        old.mainContext.autosaveEnabled = false
+        for item in items { old.mainContext.insert(TaskSchemaV1.TaskRecord(item)) }
+        try old.mainContext.save()
+        // Keep the original container open to exercise committed WAL data.
+        let location = try StoreLocation(root: root)
+        let migrated = try location.open()
+        let state = try SwiftDataTaskRepository(context: migrated.container.mainContext).snapshot()
+        #expect(Set(state.tasks.map(\.id)) == Set(items.map(\.id)))
+        #expect(state.tasks.first { $0.completedAt != nil }?.status == .completed)
+        #expect(state.sessions.isEmpty)
+        #expect(try old.mainContext.fetch(FetchDescriptor<TaskSchemaV1.TaskRecord>()).count == 2)
+        #expect(try location.open().url == migrated.url)
+    }
+
     @Test func thousandTasks() throws {
         let repo = MemoryRepository()
         let date = Date()

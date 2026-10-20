@@ -4,13 +4,15 @@ import SwiftUI
 struct DisciplinaApp: App {
     @NSApplicationDelegateAdaptor(AppCoordinator.self) private var coordinator
     @State private var dependencies = AppDependencies()
-    @State private var popoverPresented = false
+    @Environment(\.openSettings) private var openSettings
     @Environment(\.openWindow) private var openWindow
 
     var body: some Scene {
         Window("Disciplina", id: "main") {
             if let store = dependencies.store {
                 MainTaskWindowView(store: store)
+                    .id(ObjectIdentifier(store))
+                    .onAppear { dependencies.configureMenu(openMain: showMain, openSettings: { openSettings() }) }
             } else {
                 StartupFailureView(dependencies: dependencies)
             }
@@ -26,19 +28,7 @@ struct DisciplinaApp: App {
                 Button("Quick Capture") { dependencies.showCapture() }
             }
         }
-        MenuBarExtra(isInserted: .constant(true)) {
-            if let store = dependencies.store {
-                MenuBarTaskView(store: store, isPresented: $popoverPresented, openMain: showMain)
-                    .onAppear { popoverPresented = true }
-                    .onDisappear { popoverPresented = false }
-            } else {
-                StartupFailureView(dependencies: dependencies).frame(width: 360)
-            }
-        } label: {
-            MenuBarStatusLabel(status: dependencies.store?.menuBarStatus ?? MenuBarStatus(activeCount: nil))
-        }
-        .menuBarExtraStyle(.window)
-        Settings { SettingsView(login: dependencies.login) }
+        Settings { SettingsView(dependencies: dependencies) }
     }
 
     private func showMain() {
@@ -55,7 +45,14 @@ struct StartupFailureView: View {
             Text(dependencies.startupError ?? "Please retry opening the database.")
                 .textSelection(.enabled)
             Button("Retry") { dependencies.load() }
+            Button("Show backup location") { dependencies.showBackups() }
+            Button("Restore from JSON…") { dependencies.chooseRestore() }
+            if let error = dependencies.dataError { Text(error).foregroundStyle(.red) }
             Button("Quit Disciplina") { NSApp.terminate(nil) }
         }.padding(24).frame(minWidth: 300, minHeight: 220)
+            .alert("Replace local data?", isPresented: Binding(get: { dependencies.pendingRestore != nil }, set: { if !$0 { dependencies.pendingRestore = nil } })) {
+                Button("Cancel", role: .cancel) { dependencies.pendingRestore = nil }
+                Button("Restore", role: .destructive) { dependencies.restoreData() }
+            } message: { Text("The validated backup will replace local data. Existing store files remain available for recovery.") }
     }
 }

@@ -1,0 +1,82 @@
+import Foundation
+import SwiftData
+import SQLite3
+
+/// SQLite's backup API includes committed WAL content without modifying the source.
+enum DatabaseBackup {
+    static func copy(from source: URL, to destination: URL) throws {
+        var input: OpaquePointer?; var output: OpaquePointer?
+        defer { sqlite3_close(input); sqlite3_close(output) }
+        guard sqlite3_open_v2(source.path, &input, SQLITE_OPEN_READONLY, nil) == SQLITE_OK,
+              sqlite3_open(destination.path, &output) == SQLITE_OK else { throw CocoaError(.fileReadUnknown) }
+        sqlite3_busy_timeout(input, 2000); sqlite3_busy_timeout(output, 2000)
+        guard let backup = sqlite3_backup_init(output, "main", input, "main") else { throw CocoaError(.fileWriteUnknown) }
+        let result = sqlite3_backup_step(backup, -1)
+        let finish = sqlite3_backup_finish(backup)
+        guard result == SQLITE_DONE, finish == SQLITE_OK else { throw CocoaError(.fileWriteUnknown) }
+    }
+}
+
+@MainActor
+final class StoreLocation {
+    let root: URL
+    private var manifest: URL { root.appendingPathComponent("Disciplina-store.json") }
+    init(root: URL? = nil) throws {
+        self.root = try root ?? FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask,
+                                                        appropriateFor: nil, create: true)
+        try FileManager.default.createDirectory(at: self.root, withIntermediateDirectories: true)
+    }
+    private struct Manifest: Codable { let directory: String }
+    func publish(_ url: URL) throws {
+        let directory = url.deletingLastPathComponent().lastPathComponent
+        guard UUID(uuidString: directory) != nil else { throw DataError.invalidSnapshot }
+        try JSONEncoder().encode(Manifest(directory: directory)).write(to: manifest, options: .atomic)
+    }
+    func newURL() throws -> URL {
+        let directory = root.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        return directory.appendingPathComponent("default.store")
+    }
+    func backup(_ url: URL) throws -> URL {
+        let directory = root.appendingPathComponent("Disciplina Backups", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let backup = directory.appendingPathComponent("\(UUID().uuidString).store")
+        try DatabaseBackup.copy(from: url, to: backup)
+        return backup
+    }
+    func open() throws -> PersistenceController {
+        if FileManager.default.fileExists(atPath: manifest.path) {
+            let value = try JSONDecoder().decode(Manifest.self, from: Data(contentsOf: manifest))
+            guard UUID(uuidString: value.directory) != nil else { throw DataError.invalidSnapshot }
+            let url = root.appendingPathComponent(value.directory).appendingPathComponent("default.store")
+            guard FileManager.default.fileExists(atPath: url.path) else { throw CocoaError(.fileNoSuchFile) }
+            let persistence = try PersistenceController(url: url)
+            try SwiftDataTaskRepository(context: persistence.container.mainContext).snapshot().validate()
+            return persistence
+        }
+        let legacy = root.appendingPathComponent("default.store")
+        let target = try newURL()
+        var expected: [TodoItem]?
+        if FileManager.default.fileExists(atPath: legacy.path) {
+            let backup = try backup(legacy)
+            // Read the immutable V1 snapshot, never the user's active database.
+            expected = try readV1(backup)
+            try DatabaseBackup.copy(from: backup, to: target)
+        }
+        let persistence = try PersistenceController(url: target)
+        let state = try SwiftDataTaskRepository(context: persistence.container.mainContext).snapshot()
+        try state.validate()
+        if let expected {
+            guard state.tasks.sorted(by: { $0.id.uuidString < $1.id.uuidString }) == expected.sorted(by: { $0.id.uuidString < $1.id.uuidString }),
+                  state.sessions.isEmpty else { throw DataError.invalidSnapshot }
+        }
+        try publish(target)
+        return persistence
+    }
+    private func readV1(_ url: URL) throws -> [TodoItem] {
+        let schema = Schema(versionedSchema: TaskSchemaV1.self)
+        let configuration = ModelConfiguration(schema: schema, url: url, allowsSave: false, cloudKitDatabase: .none)
+        let container = try ModelContainer(for: schema, configurations: [configuration])
+        return try container.mainContext.fetch(FetchDescriptor<TaskSchemaV1.TaskRecord>()).map(\.item)
+    }
+}

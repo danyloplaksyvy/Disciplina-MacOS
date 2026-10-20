@@ -7,6 +7,16 @@ final class AppCoordinator: NSObject, NSApplicationDelegate {
             .paramDescriptor(forKeyword: keyAEPropData)?.enumCodeValue == keyAELaunchedAsLogInItem
     }
     private var quietLaunch = false
+    static var prepareToQuit: (() -> Bool)?
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard Self.prepareToQuit?() == false else { return .terminateNow }
+        let alert = NSAlert()
+        alert.messageText = "Could not save the final timer checkpoint"
+        alert.informativeText = "Retry saving, or quit using the last saved checkpoint. Unsaved time will not be recovered."
+        alert.addButton(withTitle: "Retry")
+        alert.addButton(withTitle: "Quit with saved time")
+        return alert.runModal() == .alertSecondButtonReturn ? .terminateNow : .terminateCancel
+    }
 
     func applicationWillFinishLaunching(_ notification: Notification) {
         quietLaunch = Self.launchedAtLogin
@@ -27,5 +37,5 @@ final class AppCoordinator: NSObject, NSApplicationDelegate {
 
 @MainActor
 enum WindowCoordinator {
-    static func activate() { NSApp.activate(ignoringOtherApps: true) }
+    static func activate() { NSApp.activate() }
 }

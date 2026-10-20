@@ -2,7 +2,7 @@ import Foundation
 
 @MainActor
 final class TaskService {
-    private let repository: any TaskRepository
+    let repository: any TaskRepository
     private let now: () -> Date
     private let makeID: () -> UUID
 
@@ -43,6 +43,7 @@ final class TaskService {
         var item = try find(id)
         guard item.isCompleted != isCompleted else { return }
         let date = now()
+        item.status = isCompleted ? .completed : .todo
         item.completedAt = isCompleted ? date : nil
         item.updatedAt = date
         try repository.update(item)

@@ -1,12 +1,26 @@
 import Foundation
 
-struct TodoItem: Identifiable, Equatable, Sendable {
+enum TaskStatus: String, Codable, Sendable, CaseIterable {
+    case todo, inProgress, completed
+}
+
+struct TodoItem: Identifiable, Equatable, Codable, Sendable {
     let id: UUID
     var title: String
     let createdAt: Date
     var updatedAt: Date
     var completedAt: Date?
-    var isCompleted: Bool { completedAt != nil }
+    var status: TaskStatus
+    var deletedAt: Date?
+    var isCompleted: Bool { status == .completed }
+
+    init(id: UUID, title: String, createdAt: Date, updatedAt: Date, completedAt: Date?,
+         status: TaskStatus? = nil, deletedAt: Date? = nil) {
+        self.id = id; self.title = title; self.createdAt = createdAt; self.updatedAt = updatedAt
+        self.completedAt = completedAt
+        self.status = status ?? (completedAt == nil ? .todo : .completed)
+        self.deletedAt = deletedAt
+    }
 }
 
 enum TaskError: LocalizedError, Equatable {

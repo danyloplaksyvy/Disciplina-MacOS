@@ -5,6 +5,7 @@ import Testing
 @MainActor
 final class MemoryRepository: TaskRepository {
     var items: [TodoItem] = []
+    var sessions: [WorkSession] = []
     var failFetch = false
     var failWrite = false
     var failFetchAfterWrite = false
@@ -21,6 +22,11 @@ final class MemoryRepository: TaskRepository {
     func delete(id: UUID) throws {
         guard items.contains(where: { $0.id == id }) else { throw TaskError.notFound }
         try writing(); items.removeAll { $0.id == id }
+    }
+    func snapshot() throws -> TaskSnapshot { TaskSnapshot(tasks: try fetchAll(), sessions: sessions) }
+    func commit(_ snapshot: TaskSnapshot) throws {
+        try snapshot.validate()
+        try writing(); items = snapshot.tasks; sessions = snapshot.sessions
     }
     private func writing() throws {
         if failWrite { throw CocoaError(.fileWriteOutOfSpace) }

@@ -22,10 +22,9 @@ struct QuickCaptureView: View {
                 Spacer()
                 Button("Cancel", action: cancel).keyboardShortcut(.cancelAction)
             }
-            TextField("What needs to get done?", text: $draft.title)
-                .font(.title2).textFieldStyle(.plain)
-                .focused($focused).onSubmit(save)
-                .accessibilityLabel("Capture task").accessibilityIdentifier("capture-task")
+            CaptureTextField(text: $draft.title, placeholder: "What needs to get done?",
+                             identifier: "capture-task", focusToken: draft.focusToken,
+                             submit: save, cancel: cancel).frame(height: 30)
             StoreErrorView(store: store)
             HStack {
                 Text("↵ Save task   ·   Esc Cancel").font(.caption).foregroundStyle(.secondary)
@@ -81,6 +80,7 @@ final class QuickCapturePanel: NSObject, NSWindowDelegate {
             panel.setFrameOrigin(NSPoint(x: frame.midX - panel.frame.width / 2, y: frame.midY - panel.frame.height / 2))
         }
         draft.focusToken += 1
+        NSApp.activate()
         panel.makeKeyAndOrderFront(nil)
     }
 
@@ -95,8 +95,10 @@ final class QuickCapturePanel: NSObject, NSWindowDelegate {
     }
     private func cancel() { draft.title = ""; dismissAndRestoreFocus() }
     private func dismissAndRestoreFocus() {
+        let shouldRestore = panel?.isKeyWindow == true && NSApp.isActive
         panel?.orderOut(nil)
-        if let previousApp, !previousApp.isTerminated { previousApp.activate(options: []) }
+        if shouldRestore, let previousApp, previousApp.processIdentifier != ProcessInfo.processInfo.processIdentifier,
+           !previousApp.isTerminated { previousApp.activate(options: []) }
         previousApp = nil
     }
 }
