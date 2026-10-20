@@ -15,7 +15,8 @@ final class AppCoordinator: NSObject, NSApplicationDelegate {
         alert.informativeText = "Retry saving, or quit using the last saved checkpoint. Unsaved time will not be recovered."
         alert.addButton(withTitle: "Retry")
         alert.addButton(withTitle: "Quit with saved time")
-        return alert.runModal() == .alertSecondButtonReturn ? .terminateNow : .terminateCancel
+        if alert.runModal() == .alertSecondButtonReturn { return .terminateNow }
+        return Self.prepareToQuit?() == true ? .terminateNow : .terminateCancel
     }
 
     func applicationWillFinishLaunching(_ notification: Notification) {

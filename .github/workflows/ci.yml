@@ -31,14 +31,22 @@ jobs:
         run: |
           set -o pipefail
           xcodebuild test-without-building -project Disciplina.xcodeproj -scheme Disciplina -destination 'platform=macOS,arch=arm64' -derivedDataPath DerivedData -only-testing:DisciplinaTests -resultBundlePath unit-tests.xcresult | tee unit-tests.log
+      - name: Build clean release application
+        run: |
+          set -o pipefail
+          xcodebuild build -project Disciplina.xcodeproj -scheme Disciplina -configuration Release -destination 'platform=macOS,arch=arm64' -derivedDataPath ReleaseData CODE_SIGN_IDENTITY=- ARCHS=arm64 | tee release-build.log
       - name: Package personal development build
         run: |
-          codesign --verify --deep --strict DerivedData/Build/Products/Debug/Disciplina.app
-          ditto -c -k --sequesterRsrc --keepParent DerivedData/Build/Products/Debug/Disciplina.app Disciplina-arm64-development.zip
+          test ! -d ReleaseData/Build/Products/Release/Disciplina.app/Contents/Frameworks/XCTest.framework
+          git rev-parse HEAD > build-commit.txt
+          codesign --verify --deep --strict ReleaseData/Build/Products/Release/Disciplina.app
+          ditto -c -k --sequesterRsrc --keepParent ReleaseData/Build/Products/Release/Disciplina.app Disciplina-arm64-development.zip
       - uses: actions/upload-artifact@v4
         with:
           name: Disciplina-arm64-development
-          path: Disciplina-arm64-development.zip
+          path: |
+            Disciplina-arm64-development.zip
+            build-commit.txt
           retention-days: 14
       - uses: actions/upload-artifact@v4
         if: always()

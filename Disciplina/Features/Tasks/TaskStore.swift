@@ -94,6 +94,7 @@ final class TaskStore {
     @discardableResult func pause(_ reason: SessionEndReason = .paused) -> Bool { mutate { try timer.pause(reason: reason) } }
     @discardableResult func setStatus(_ id: UUID, _ status: TaskStatus) -> Bool { mutate { try timer.setStatus(id: id, status: status) } }
     @discardableResult func restore(_ id: UUID) -> Bool {
+        if items.contains(where: { $0.id == id }) { return true }
         let result = mutate {
             var snapshot = try service.repository.snapshot()
             guard let index = snapshot.tasks.firstIndex(where: { $0.id == id && $0.deletedAt != nil }) else { throw TaskError.notFound }

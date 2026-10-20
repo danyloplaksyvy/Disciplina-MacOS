@@ -73,6 +73,24 @@ final class StoreLocation {
         try publish(target)
         return persistence
     }
+    func restore(_ snapshot: TaskSnapshot, currentURL: URL?, beforePublish: () throws -> Void = {}) throws -> PersistenceController {
+        try snapshot.validate()
+        if let currentURL { _ = try backup(currentURL) }
+        var normalized = snapshot
+        normalized.closeInterrupted()
+        let url = try newURL()
+        let replacement = try PersistenceController(url: url)
+        let repository = SwiftDataTaskRepository(context: replacement.container.mainContext)
+        try repository.commit(normalized)
+        let saved = try repository.snapshot()
+        try saved.validate()
+        guard Set(saved.tasks.map(\.id)) == Set(normalized.tasks.map(\.id)),
+              Set(saved.sessions.map(\.id)) == Set(normalized.sessions.map(\.id)) else { throw DataError.invalidSnapshot }
+        try beforePublish()
+        try publish(url)
+        return replacement
+    }
+
     private func readV1(_ url: URL) throws -> [TodoItem] {
         let schema = Schema(versionedSchema: TaskSchemaV1.self)
         let configuration = ModelConfiguration(schema: schema, url: url, allowsSave: false, cloudKitDatabase: .none)

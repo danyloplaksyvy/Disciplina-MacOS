@@ -20,7 +20,23 @@ final class AppDependencies {
     var pendingRestore: BackupDocument?
     var shortcutUnavailable: Bool { !KeyboardShortcuts.isEnabled(for: .quickCapture) || KeyboardShortcuts.getShortcut(for: .quickCapture) == nil }
 
-    init() { load() }
+    init() {
+        let args = ProcessInfo.processInfo.arguments
+        if let index = args.firstIndex(of: "--verify-migration-copy"), args.indices.contains(index + 1) {
+            do {
+                let location = try StoreLocation(root: URL(fileURLWithPath: args[index + 1]))
+                let persistence = try location.open()
+                let state = try SwiftDataTaskRepository(context: persistence.container.mainContext).snapshot()
+                try state.validate()
+                print("Migration verification passed: \(state.tasks.count) tasks; \(state.sessions.count) sessions")
+                exit(EXIT_SUCCESS)
+            } catch {
+                print("Migration verification failed: \(error.localizedDescription)")
+                exit(EXIT_FAILURE)
+            }
+        }
+        load()
+    }
     func load() {
         guard store == nil else { return }
         do {
@@ -59,7 +75,7 @@ final class AppDependencies {
         }
         AppCoordinator.prepareToQuit = { [weak store] in
             guard let store else { return true }
-            if store.timer.failure != nil { return false }
+            if store.timer.failure != nil { store.reload(); if store.timer.failure != nil { return false } }
             return store.pause(.appQuit)
         }
         if let openMain, let openSettings { configureMenu(openMain: openMain, openSettings: openSettings) }
@@ -100,13 +116,7 @@ final class AppDependencies {
             var snapshot = try document.validatedSnapshot(); snapshot.closeInterrupted()
             if let store, !store.pause() { throw DataError.timerUnavailable }
             let location = try self.location ?? StoreLocation(); self.location = location
-            if let current = persistence?.url { _ = try location.backup(current) }
-            let url = try location.newURL()
-            let replacement = try PersistenceController(url: url)
-            let repository = SwiftDataTaskRepository(context: replacement.container.mainContext)
-            try repository.commit(snapshot)
-            try repository.snapshot().validate()
-            try location.publish(url)
+            let replacement = try location.restore(snapshot, currentURL: persistence?.url)
             NSApp.windows.forEach { $0.undoManager?.removeAllActions() }
             install(replacement); startupError = nil; dataError = nil
         } catch { dataError = "Restore did not replace your current data. \(error.localizedDescription)" }

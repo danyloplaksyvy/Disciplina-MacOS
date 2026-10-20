@@ -29,22 +29,19 @@ struct CaptureTextField: NSViewRepresentable {
     }
     final class Field: NSTextField {
         var focusToken = -1
-        private var observer: NSObjectProtocol?
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
-            if let observer { NotificationCenter.default.removeObserver(observer) }
+            NotificationCenter.default.removeObserver(self, name: NSWindow.didBecomeKeyNotification, object: nil)
             guard let window else { return }
-            observer = NotificationCenter.default.addObserver(forName: NSWindow.didBecomeKeyNotification,
-                object: window, queue: .main) { [weak self] _ in
-                MainActor.assumeIsolated { self?.requestFocus() }
-            }
+            NotificationCenter.default.addObserver(self, selector: #selector(windowBecameKey),
+                                                   name: NSWindow.didBecomeKeyNotification, object: window)
             requestFocus()
         }
+        @objc private func windowBecameKey(_ notification: Notification) { requestFocus() }
         func requestFocus() {
             guard let window, window.isKeyWindow else { return }
             if window.firstResponder !== currentEditor() { window.makeFirstResponder(self) }
         }
-        deinit { if let observer { NotificationCenter.default.removeObserver(observer) } }
     }
     final class Coordinator: NSObject, NSTextFieldDelegate {
         var parent: CaptureTextField

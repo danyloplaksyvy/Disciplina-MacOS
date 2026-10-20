@@ -81,6 +81,26 @@ struct PersistenceTests {
         #expect(try location.open().url == migrated.url)
     }
 
+    @Test func stagedRestoreFailurePreservesCurrentStore() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let location = try StoreLocation(root: root)
+        let current = try location.open()
+        let repo = SwiftDataTaskRepository(context: current.container.mainContext)
+        try TaskService(repository: repo).create(title: "Keep me")
+        let original = try repo.snapshot()
+        #expect(throws: (any Error).self) {
+            _ = try location.restore(TaskSnapshot(), currentURL: current.url) { throw CocoaError(.fileWriteOutOfSpace) }
+        }
+        let reopened = try location.open()
+        #expect(reopened.url == current.url)
+        #expect(try SwiftDataTaskRepository(context: reopened.container.mainContext).snapshot() == original)
+        let replacement = try location.restore(TaskSnapshot(), currentURL: current.url)
+        #expect(replacement.url != current.url)
+        #expect(try location.open().url == replacement.url)
+        #expect(try repo.snapshot() == original)
+    }
+
     @Test func thousandTasks() throws {
         let repo = MemoryRepository()
         let date = Date()
