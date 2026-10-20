@@ -17,10 +17,22 @@ struct DisciplinaApp: App {
             } else {
                 StartupFailureView(dependencies: dependencies)
             }
-            }.onAppear { dependencies.configureMenu(openMain: showMain, openSettings: { openSettings() }) }
+            }.onAppear { dependencies.configureMenu(openMain: showMain, openSettings: { openSettings(); WindowCoordinator.activate() }) }
         }
         .defaultSize(width: 860, height: 600)
         .commands {
+            CommandGroup(replacing: .undoRedo) {
+                Button("Undo") {
+                    if let editor = NSApp.keyWindow?.firstResponder as? NSTextView, editor.isEditable {
+                        editor.undoManager?.undo()
+                    } else { dependencies.store?.undoDelete() }
+                }.keyboardShortcut("z")
+                Button("Redo") {
+                    if let editor = NSApp.keyWindow?.firstResponder as? NSTextView, editor.isEditable {
+                        editor.undoManager?.redo()
+                    }
+                }.keyboardShortcut("z", modifiers: [.command, .shift])
+            }
             CommandGroup(replacing: .newItem) {
                 Button("New Task") {
                     showMain()

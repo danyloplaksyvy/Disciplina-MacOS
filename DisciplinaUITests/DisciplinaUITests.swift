@@ -79,6 +79,18 @@ final class DisciplinaUITests: XCTestCase {
         XCTAssertTrue(list.staticTexts["Undo target"].waitForExistence(timeout: 3))
     }
 
+    func testTextUndoKeepsDeletionHistorySeparate() {
+        add("Deleted task")
+        app.staticTexts["Deleted task"].rightClick()
+        app.windows["main"].menuItems["Delete"].click()
+        let input = app.textFields["new-task"]
+        input.click()
+        input.typeText("Draft")
+        app.typeKey("z", modifierFlags: .command)
+        XCTAssertEqual(input.value as? String, "")
+        XCTAssertFalse(app.staticTexts["Deleted task"].exists)
+    }
+
     func testCancelEditingAndCapture() {
         add("Original title")
         app.staticTexts["Original title"].doubleClick()

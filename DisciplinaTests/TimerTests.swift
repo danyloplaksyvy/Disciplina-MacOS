@@ -155,6 +155,21 @@ import Testing
         #expect(throws: (any Error).self) { _ = try BackupDocument.decode(Data("{}".utf8)) }
     }
 
+    @Test func undoWaitsForSuccessfulReloadAfterCommittedDeletion() throws {
+        let (repo, _, _, a, _) = try fixture()
+        let store = TaskStore(service: TaskService(repository: repo))
+        repo.failFetchAfterWrite = true
+        #expect(store.delete(id: a))
+        #expect(store.needsRefresh)
+        #expect(!store.restore(a))
+        #expect(repo.items.first { $0.id == a }?.deletedAt != nil)
+        repo.failFetch = false; repo.failFetchAfterWrite = false
+        store.reload()
+        #expect(store.restore(a))
+        #expect(repo.items.first { $0.id == a }?.deletedAt == nil)
+        #expect(store.restore(a)) // Duplicate native Undo is harmless.
+    }
+
     @Test func expandedHours() {
         #expect(DurationText.precise(360000000) == "100:00:00")
         #expect(DurationText.precise(0) == "00:00:00")

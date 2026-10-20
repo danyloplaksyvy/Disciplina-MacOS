@@ -111,10 +111,10 @@ final class TaskStore {
     }
     @discardableResult func setStatus(_ id: UUID, _ status: TaskStatus) -> Bool { mutate { try timer.setStatus(id: id, status: status) } }
     @discardableResult func restore(_ id: UUID) -> Bool {
-        if items.contains(where: { $0.id == id }) { return true }
         let result = mutate {
             var snapshot = try service.repository.snapshot()
-            guard let index = snapshot.tasks.firstIndex(where: { $0.id == id && $0.deletedAt != nil }) else { throw TaskError.notFound }
+            guard let index = snapshot.tasks.firstIndex(where: { $0.id == id }) else { throw TaskError.notFound }
+            guard snapshot.tasks[index].deletedAt != nil else { return }
             snapshot.tasks[index].deletedAt = nil
             snapshot.tasks[index].updatedAt = Date()
             try service.repository.commit(snapshot)

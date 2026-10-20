@@ -29,23 +29,32 @@ struct CaptureTextField: NSViewRepresentable {
     }
     final class Field: NSTextField {
         var focusToken = -1
+        private var wantsFocus = true
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
             NotificationCenter.default.removeObserver(self, name: NSWindow.didBecomeKeyNotification, object: nil)
             guard let window else { return }
             NotificationCenter.default.addObserver(self, selector: #selector(windowBecameKey),
                                                    name: NSWindow.didBecomeKeyNotification, object: window)
-            requestFocus()
+            applyFocus()
         }
-        @objc private func windowBecameKey(_ notification: Notification) { requestFocus() }
-        func requestFocus() {
+        @objc private func windowBecameKey(_ notification: Notification) { applyFocus() }
+        func requestFocus() { wantsFocus = true; applyFocus() }
+        private func applyFocus() {
+            guard wantsFocus else { return }
             guard let window, window.isKeyWindow else { return }
-            if currentEditor() == nil || window.firstResponder !== currentEditor() { window.makeFirstResponder(self) }
+            if currentEditor() == nil || window.firstResponder !== currentEditor() {
+                if window.makeFirstResponder(self) { wantsFocus = false }
+            } else { wantsFocus = false }
         }
     }
     final class Coordinator: NSObject, NSTextFieldDelegate {
         var parent: CaptureTextField
         init(_ parent: CaptureTextField) { self.parent = parent }
+        func controlTextDidBeginEditing(_ notification: Notification) {
+            if let field = notification.object as? NSTextField,
+               let editor = field.currentEditor() as? NSTextView { editor.allowsUndo = true }
+        }
         func controlTextDidChange(_ notification: Notification) {
             guard let field = notification.object as? NSTextField else { return }
             parent.text = field.stringValue

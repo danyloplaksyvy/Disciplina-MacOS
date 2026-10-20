@@ -50,7 +50,6 @@ struct TaskRowView: View {
     let store: TaskStore
     var compact = false
     var details: () -> Void = {}
-    @Environment(\.undoManager) private var undoManager
     @State private var editing = false
     @State private var draft = ""
     @FocusState private var editingFocused: Bool
@@ -99,11 +98,8 @@ struct TaskRowView: View {
         }
         Button("Delete", role: .destructive) {
             if store.delete(id: item.id) {
-                let id = item.id
-                undoManager?.registerUndo(withTarget: store) { target in
-                    MainActor.assumeIsolated { _ = target.restore(id) }
-                }
-                undoManager?.setActionName("Delete Task")
+                // Deletion establishes task-action context; text Undo belongs to editors.
+                NSApp.keyWindow?.makeFirstResponder(nil)
             }
         }
     }
