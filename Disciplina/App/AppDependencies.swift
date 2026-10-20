@@ -8,6 +8,7 @@ final class AppDependencies {
     private(set) var startupError: String?
     var dataError: String?
     let login = LoginItemService()
+    private var testingMode = false
     private var persistence: PersistenceController?
     private var location: StoreLocation?
     private var capture: QuickCapturePanel?
@@ -43,8 +44,12 @@ final class AppDependencies {
         do {
             let testing = ProcessInfo.processInfo.arguments.contains("--ui-testing")
                 || ProcessInfo.processInfo.environment["DISCIPLINA_TESTING"] == "1"
+            testingMode = testing
             let persistence: PersistenceController
-            if testing { persistence = try PersistenceController(inMemory: true) }
+            if testing {
+                location = try StoreLocation(root: FileManager.default.temporaryDirectory.appendingPathComponent("Disciplina-ui-\(UUID().uuidString)"))
+                persistence = try PersistenceController(inMemory: true)
+            }
             else {
                 let location = try StoreLocation(); self.location = location
                 persistence = try location.open()
@@ -140,7 +145,7 @@ final class AppDependencies {
             let location = try self.location ?? StoreLocation(); self.location = location
             let replacement = try location.restore(snapshot, currentURL: persistence?.url)
             NSApp.windows.forEach { $0.undoManager?.removeAllActions() }
-            install(replacement); startupError = nil; dataError = nil
+            install(replacement, testing: testingMode); startupError = nil; dataError = nil
         } catch { dataError = "Restore did not replace your current data. \(error.localizedDescription)" }
     }
 }
