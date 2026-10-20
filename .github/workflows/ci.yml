@@ -57,10 +57,23 @@ jobs:
             *.xcresult
           retention-days: 14
   ui-tests:
+    strategy:
+      fail-fast: false
+      matrix:
+        appearance: [light, dark]
     runs-on: macos-26
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+      - name: Set native system appearance
+        env:
+          APPEARANCE: ${{ matrix.appearance }}
+        run: |
+          python3 - <<'PYTHON'
+          import os, subprocess
+          dark = 'true' if os.environ['APPEARANCE'] == 'dark' else 'false'
+          subprocess.run(['osascript', '-e', f'tell application "System Events" to tell appearance preferences to set dark mode to {dark}'], check=True, timeout=30)
+          PYTHON
       - name: UI acceptance tests
         run: |
           set -o pipefail
@@ -74,7 +87,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: ui-test-evidence
+          name: ui-test-evidence-${{ matrix.appearance }}
           path: |
             ui-tests.log
             ui-tests.xcresult

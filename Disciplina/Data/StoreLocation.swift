@@ -2,18 +2,35 @@ import Foundation
 import SwiftData
 import SQLite3
 
-/// SQLite's backup API includes committed WAL content without modifying the source.
+/// SQLite's backup API includes committed WAL content. Opening without CREATE
+/// permits SQLite to initialize WAL bookkeeping, but never creates a missing source
+/// or issues task/schema mutations against it.
 enum DatabaseBackup {
     static func copy(from source: URL, to destination: URL) throws {
         var input: OpaquePointer?; var output: OpaquePointer?
         defer { sqlite3_close(input); sqlite3_close(output) }
-        guard sqlite3_open_v2(source.path, &input, SQLITE_OPEN_READONLY, nil) == SQLITE_OK,
-              sqlite3_open(destination.path, &output) == SQLITE_OK else { throw CocoaError(.fileReadUnknown) }
+        func failure(_ operation: String, _ code: Int32) -> NSError {
+            let detail = [input, output].compactMap { handle -> String? in
+                guard let handle else { return nil }
+                return String(cString: sqlite3_errmsg(handle))
+            }.joined(separator: "; ")
+            return NSError(domain: "Disciplina.DatabaseBackup", code: Int(code),
+                           userInfo: [NSLocalizedDescriptionKey: "Database snapshot failed during \(operation) (\(code)): \(detail)"])
+        }
+        let openedInput = sqlite3_open_v2(source.path, &input, SQLITE_OPEN_READWRITE, nil)
+        guard openedInput == SQLITE_OK else { throw failure("opening source", openedInput) }
+        let openedOutput = sqlite3_open(destination.path, &output)
+        guard openedOutput == SQLITE_OK else { throw failure("opening destination", openedOutput) }
         sqlite3_busy_timeout(input, 2000); sqlite3_busy_timeout(output, 2000)
-        guard let backup = sqlite3_backup_init(output, "main", input, "main") else { throw CocoaError(.fileWriteUnknown) }
+        guard let backup = sqlite3_backup_init(output, "main", input, "main") else { throw failure("initializing", sqlite3_errcode(output)) }
         let result = sqlite3_backup_step(backup, -1)
         let finish = sqlite3_backup_finish(backup)
-        guard result == SQLITE_DONE, finish == SQLITE_OK else { throw CocoaError(.fileWriteUnknown) }
+        guard result == SQLITE_DONE, finish == SQLITE_OK else { throw failure("copying", result == SQLITE_DONE ? finish : result) }
+        // Make the snapshot a standalone file. A copied WAL-mode header without
+        // initialized sidecars cannot always be reopened read-only by Core Data.
+        let journal = sqlite3_exec(output, "PRAGMA journal_mode=DELETE", nil, nil, nil)
+        guard journal == SQLITE_OK else { throw failure("finalizing snapshot", journal) }
+
     }
 }
 

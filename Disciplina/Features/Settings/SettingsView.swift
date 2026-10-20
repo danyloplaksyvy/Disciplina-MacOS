@@ -3,14 +3,17 @@ import KeyboardShortcuts
 
 struct SettingsView: View {
     let dependencies: AppDependencies
+    @State private var shortcutWarning = false
     @State private var permanentID: UUID?
     private var login: LoginItemService { dependencies.login }
     var body: some View {
         Form {
             Section("Quick Capture") {
-                KeyboardShortcuts.Recorder("Global shortcut:", name: .quickCapture)
+                KeyboardShortcuts.Recorder("Global shortcut:", name: .quickCapture) { _ in
+                    Task { @MainActor in shortcutWarning = dependencies.shortcutUnavailable }
+                }
                 Text("Capture a task from any application while Disciplina is running.").font(.caption)
-                if dependencies.shortcutUnavailable { Label("Choose an available global shortcut.", systemImage: "exclamationmark.triangle") }
+                if shortcutWarning { Label("Choose an available global shortcut.", systemImage: "exclamationmark.triangle") }
             }
             Section("Startup") {
                 Toggle("Launch at login", isOn: Binding(get: { login.enabled }, set: { login.setEnabled($0) }))
@@ -41,8 +44,8 @@ struct SettingsView: View {
             }
             Text("Your tasks stay on this Mac. No account or internet connection required.").foregroundStyle(.secondary)
         }.formStyle(.grouped).padding().frame(width: 560, height: 580).tint(Theme.accent)
-            .onAppear { login.refresh() }
-            .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in login.refresh() }
+            .onAppear { login.refresh(); shortcutWarning = dependencies.shortcutUnavailable }
+            .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in login.refresh(); shortcutWarning = dependencies.shortcutUnavailable }
             .alert("Permanently delete this task and its sessions?", isPresented: Binding(get: { permanentID != nil }, set: { if !$0 { permanentID = nil } })) {
                 Button("Cancel", role: .cancel) { permanentID = nil }
                 Button("Delete permanently", role: .destructive) {

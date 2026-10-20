@@ -94,6 +94,25 @@ final class DisciplinaUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Captured task"].waitForExistence(timeout: 3))
     }
 
+    func testGlobalCaptureFromFinderAndRepeatedShortcut() {
+        app.terminate()
+        app.launchArguments = ["--ui-testing", "--enable-test-shortcut"]
+        app.launch()
+        XCTAssertTrue(app.textFields["new-task"].waitForExistence(timeout: 10))
+        let finder = XCUIApplication(bundleIdentifier: "com.apple.finder")
+        finder.activate()
+        finder.typeKey(" ", modifierFlags: [.control, .option])
+        let capture = app.textFields["capture-task"]
+        XCTAssertTrue(capture.waitForExistence(timeout: 5))
+        app.typeText("From Finder")
+        app.typeKey(" ", modifierFlags: [.control, .option])
+        XCTAssertEqual(capture.value as? String, "From Finder")
+        app.typeText(" captured\n")
+        app.activate()
+        XCTAssertTrue(app.staticTexts["From Finder captured"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.staticTexts.matching(identifier: "From Finder captured").count, 1)
+    }
+
     func testCloseAndReopenSingleWindow() {
         app.typeKey("w", modifierFlags: .command)
         XCTAssertFalse(app.windows["main"].exists)
@@ -122,6 +141,10 @@ final class DisciplinaUITests: XCTestCase {
         app.buttons["Start Timed task"].click()
         expectMenuBarStatus("Disciplina: Timing Timed task")
         attachMenuBarScreenshot("running-timer-dot")
+        let appearance = XCTAttachment(screenshot: app.windows["main"].screenshot())
+        appearance.name = "main-window-running-timer"
+        appearance.lifetime = .keepAlways
+        add(appearance)
         app.buttons["Pause Timed task"].click()
         expectMenuBarStatus("Disciplina: 1 active task")
         XCTAssertTrue(app.buttons["Resume Timed task"].exists)

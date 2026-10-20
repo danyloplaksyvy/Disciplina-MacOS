@@ -63,7 +63,9 @@ final class AppDependencies {
         self.persistence = persistence; self.store = store
         observeAnnouncements(store)
         let capture = QuickCapturePanel(store: store); self.capture = capture
-        if !testing, hotkeys == nil { hotkeys = HotkeyService { [weak self] in self?.showCapture() } }
+        if (!testing || ProcessInfo.processInfo.arguments.contains("--enable-test-shortcut")), hotkeys == nil {
+            hotkeys = HotkeyService { [weak self] in self?.showCapture() }
+        }
         ticker = Task { @MainActor [weak store] in
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(1))
