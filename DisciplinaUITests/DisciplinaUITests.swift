@@ -192,8 +192,6 @@ final class DisciplinaUITests: XCTestCase {
     func testDetailsLayoutAndSessionEditing() {
         add("A long task title that must remain readable while its details are open")
         let list = app.outlines["main-task-list"]
-        list.staticTexts.firstMatch.click()
-        // Open explicitly rather than relying on which section header is first.
         list.staticTexts["A long task title that must remain readable while its details are open"].click()
         let close = app.buttons["Close details"]
         XCTAssertTrue(close.waitForExistence(timeout: 3))
@@ -251,6 +249,25 @@ final class DisciplinaUITests: XCTestCase {
         let popoverList = app.descendants(matching: .any)["popover-task-list"].firstMatch
         XCTAssertTrue(popoverList.staticTexts["Popover focused without clicking"].waitForExistence(timeout: 3))
         app.statusItems.firstMatch.click()
+    }
+
+    func testPopoverAboveFullScreenTaskWindow() {
+        let window = app.windows["main"]
+        let initialHeight = window.frame.height
+        app.typeKey("f", modifierFlags: [.command, .control])
+        let fullscreen = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            window.frame.height > initialHeight + 20
+        }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [fullscreen], timeout: 8), .completed)
+        app.statusItems.firstMatch.click()
+        XCTAssertTrue(app.buttons["Open Disciplina"].waitForExistence(timeout: 5))
+        app.typeText("Full screen popover capture\n")
+        let list = app.descendants(matching: .any)["popover-task-list"].firstMatch
+        XCTAssertTrue(list.staticTexts["Full screen popover capture"].waitForExistence(timeout: 3))
+        let screenshot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        screenshot.name = "popover-above-full-screen"; screenshot.lifetime = .keepAlways; add(screenshot)
+        app.statusItems.firstMatch.click()
+        app.typeKey("f", modifierFlags: [.command, .control])
     }
 
 }

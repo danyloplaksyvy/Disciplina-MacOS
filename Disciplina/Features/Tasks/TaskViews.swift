@@ -69,6 +69,7 @@ struct TaskRowView: View {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(item.title).strikethrough(item.isCompleted)
                         .onTapGesture(count: 2) { if !compact { draft = item.title; editing = true; editingFocused = true } }
+                        .onTapGesture { if !compact { details() } }
                         .foregroundStyle(item.isCompleted ? .secondary : .primary)
                         .lineLimit(2).truncationMode(.tail).help(item.title)
                     if !compact {
@@ -227,7 +228,7 @@ struct MainTaskWindowView: View {
     @ViewBuilder private func group(_ title: String, _ items: [TodoItem]) -> some View {
         Section("\(title) · \(items.count)") {
             ForEach(items) { item in
-                TaskRowView(item: item, store: store, details: { detailID = item.id }).tag(item.id)
+                TaskRowView(item: item, store: store, details: { selection = item.id; detailID = item.id; listFocused = true }).tag(item.id)
                     .transition(reduceMotion ? .identity : .opacity.combined(with: .move(edge: .top)))
             }
             if items.isEmpty { Text("No tasks").foregroundStyle(.secondary) }
