@@ -262,7 +262,13 @@ final class DisciplinaUITests: XCTestCase {
             window.frame.height > initialHeight + 20
         }, object: nil)
         XCTAssertEqual(XCTWaiter.wait(for: [fullscreen], timeout: 8), .completed)
-        app.statusItems.firstMatch.click()
+        // Native full screen auto-hides the menu bar. Reveal it before targeting
+        // the status item, whose accessibility frame is otherwise off-screen.
+        window.coordinate(withNormalizedOffset: CGVector(dx: 0.75, dy: 0)).hover()
+        let status = app.statusItems.firstMatch
+        let visible = XCTNSPredicateExpectation(predicate: NSPredicate(format: "hittable == true"), object: status)
+        XCTAssertEqual(XCTWaiter.wait(for: [visible], timeout: 5), .completed)
+        status.click()
         XCTAssertTrue(app.buttons["Open Disciplina"].waitForExistence(timeout: 5))
         app.typeText("Full screen popover capture\n")
         let list = app.descendants(matching: .any)["popover-task-list"].firstMatch
