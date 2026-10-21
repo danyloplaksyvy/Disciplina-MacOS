@@ -21,6 +21,18 @@ final class DisciplinaUITests: XCTestCase {
         XCTAssertEqual(field.value as? String, "")
     }
 
+    private func clickDetailButton(_ label: String) {
+        let pane = app.scrollViews["task-details"]
+        let button = app.buttons[label].firstMatch
+        XCTAssertTrue(button.waitForExistence(timeout: 5))
+        for _ in 0..<12 {
+            let frame = button.frame
+            if frame.minY >= pane.frame.minY && frame.maxY <= pane.frame.maxY { break }
+            pane.scroll(byDeltaX: 0, deltaY: frame.midY > pane.frame.midY ? -150 : 150)
+        }
+        button.click()
+    }
+
     private func expectMenuBarStatus(_ label: String) {
         let status = app.statusItems.firstMatch
         XCTAssertTrue(status.waitForExistence(timeout: 5))
@@ -96,6 +108,23 @@ final class DisciplinaUITests: XCTestCase {
         list.staticTexts["Recurring practice"].click()
         let attachment = XCTAttachment(screenshot: app.windows["main"].screenshot())
         attachment.name = "selected-recurring-row"; attachment.lifetime = .keepAlways; add(attachment)
+    }
+
+    func testRecurringSeriesCanStopBetweenOccurrencesInSettings() {
+        add("Scheduled practice")
+        let list = app.outlines["main-task-list"]
+        list.staticTexts["Scheduled practice"].click()
+        app.buttons["Repeat…"].click()
+        let sheet = app.sheets.firstMatch
+        XCTAssertTrue(sheet.waitForExistence(timeout: 5))
+        sheet.popUpButtons.firstMatch.click(); app.menuItems["Every day"].click()
+        sheet.buttons["Save"].click()
+        list.buttons["Complete Scheduled practice"].click()
+        app.buttons["Settings"].firstMatch.click()
+        let stop = app.buttons["Stop repeating"].firstMatch
+        XCTAssertTrue(stop.waitForExistence(timeout: 5))
+        stop.click()
+        XCTAssertTrue(app.staticTexts["No repeating tasks"].waitForExistence(timeout: 5))
     }
 
     func testCreateEditCompleteReopenDelete() {
@@ -255,7 +284,7 @@ final class DisciplinaUITests: XCTestCase {
         XCTAssertGreaterThanOrEqual(list.frame.width, 360)
         let snapshot = XCTAttachment(screenshot: app.windows["main"].screenshot())
         snapshot.name = "readable-task-details"; snapshot.lifetime = .keepAlways; add(snapshot)
-        app.buttons["Add time…"].click()
+        clickDetailButton("Add time…")
         let sheet = app.sheets.firstMatch
         XCTAssertTrue(sheet.waitForExistence(timeout: 3))
         let minutes = sheet.textFields["duration-minutes"]
@@ -263,23 +292,23 @@ final class DisciplinaUITests: XCTestCase {
         sheet.buttons["Save"].click()
         XCTAssertTrue(app.staticTexts["Manually added"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.staticTexts["00:02:00"].firstMatch.exists)
-        app.buttons["Edit duration"].click()
+        clickDetailButton("Edit duration")
         let editMinutes = app.sheets.firstMatch.textFields["duration-minutes"]
         editMinutes.click(); editMinutes.typeKey("a", modifierFlags: .command); editMinutes.typeText("1")
         app.sheets.firstMatch.buttons["Cancel"].click()
         XCTAssertTrue(app.staticTexts["00:02:00"].firstMatch.exists)
-        app.buttons["Edit duration"].click()
+        clickDetailButton("Edit duration")
         let savedMinutes = app.sheets.firstMatch.textFields["duration-minutes"]
         savedMinutes.click(); savedMinutes.typeKey("a", modifierFlags: .command); savedMinutes.typeText("1")
         app.sheets.firstMatch.buttons["Save"].click()
         XCTAssertTrue(app.staticTexts["00:01:00"].firstMatch.waitForExistence(timeout: 3))
-        app.buttons["Delete session…"].click()
+        clickDetailButton("Delete session…")
         app.sheets.firstMatch.buttons["Cancel"].click()
         XCTAssertTrue(app.staticTexts["Manually added"].exists)
-        app.buttons["Delete session…"].click()
+        clickDetailButton("Delete session…")
         app.sheets.firstMatch.buttons["Delete session"].click()
         XCTAssertTrue(app.staticTexts["No work sessions yet."].waitForExistence(timeout: 3))
-        close.click()
+        clickDetailButton("Close details")
         XCTAssertFalse(close.exists)
         XCTAssertGreaterThan(list.frame.width, 650)
     }
@@ -289,7 +318,7 @@ final class DisciplinaUITests: XCTestCase {
         app.buttons["Start Pause for editing"].click()
         expectMenuBarStatus("Disciplina: Timing Pause for editing")
         app.outlines["main-task-list"].staticTexts["Pause for editing"].click()
-        app.buttons["Add time…"].click()
+        clickDetailButton("Add time…")
         XCTAssertTrue(app.sheets.firstMatch.waitForExistence(timeout: 3))
         expectMenuBarStatus("Disciplina: 1 active task")
         app.sheets.firstMatch.buttons["Cancel"].click()

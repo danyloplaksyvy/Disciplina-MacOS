@@ -122,7 +122,7 @@ struct RecurrenceTests {
     }
     @Test func backupCompatibilityAndInvalidReferences() throws {
         let (repo, item) = fixture()
-        let timer = TimerCoordinator(repository: repo)
+        let timer = TimerCoordinator(repository: repo, sample: { TimeSample(awake: 0, continuous: 0, date: item.createdAt) })
         try timer.setRepeat(taskID: item.id, weekdays: [2, 6])
         try timer.setStatus(id: item.id, status: .completed)
         let snapshot = try repo.snapshot()
@@ -144,6 +144,21 @@ struct RecurrenceTests {
         invalid = snapshot; invalid.series.append(invalid.series[0])
         #expect(throws: (any Error).self) { try invalid.validate() }
     }
+    @Test func committedCompletionRefreshFailureDoesNotReschedule() throws {
+        let (repo, item) = fixture()
+        let timer = TimerCoordinator(repository: repo, sample: { TimeSample(awake: 0, continuous: 0, date: item.createdAt) })
+        let store = TaskStore(service: TaskService(repository: repo), timer: timer)
+        #expect(store.setRepeat(item.id, weekdays: Array(1...7)))
+        repo.failFetchAfterWrite = true
+        #expect(store.setCompleted(id: item.id, isCompleted: true))
+        let reserved = repo.series[0].pendingTaskID
+        #expect(store.unavailable)
+        #expect(!store.setCompleted(id: item.id, isCompleted: true))
+        repo.failFetch = false; repo.failFetchAfterWrite = false
+        store.reload()
+        #expect(!store.unavailable && repo.series[0].pendingTaskID == reserved && repo.items.count == 1)
+    }
+
     @Test func dayGroupingDSTMidnightTimezoneAndYear() throws {
         let now = date("2026-10-25T23:30:00Z") // DST has ended; Monday local midnight passed
         let yesterday = date("2026-10-25T00:30:00Z")

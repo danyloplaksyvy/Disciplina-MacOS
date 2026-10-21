@@ -61,8 +61,7 @@ final class SwiftDataTaskRepository: TaskRepository {
             for record in series where !seriesIDs.contains(record.id) { context.delete(record) }
             for item in snapshot.series {
                 if let record = seriesMap[item.id] {
-                    let payload = try JSONEncoder().encode(item)
-                    if record.payload != payload { record.payload = payload }
+                    if try record.value() != item { record.payload = try JSONEncoder().encode(item) }
                 } else { context.insert(try SeriesRecord(item)) }
             }
             try save(context)

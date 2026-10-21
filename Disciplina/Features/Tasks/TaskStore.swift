@@ -48,6 +48,7 @@ final class TaskStore {
     }
 
     private func publish(_ snapshot: TaskSnapshot) {
+        let previousGroups = [inProgress, todo, completed]
         items = snapshot.tasks.filter { $0.deletedAt == nil }
         deleted = snapshot.tasks.filter { $0.deletedAt != nil }
         sessions = snapshot.sessions
@@ -61,7 +62,7 @@ final class TaskStore {
         inProgress = items.filter { $0.status == .inProgress }.sorted(by: recentlyUpdated)
         todo = active.filter { $0.status == .todo }
         relevantCandidates = inProgress + todo.sorted(by: recentlyUpdated)
-        rebuildDays()
+        if previousGroups != [inProgress, todo, completed] { rebuildDays() }
         totals = [:]
         for session in sessions { totals[session.taskID, default: 0] += session.accumulatedMilliseconds }
     }
@@ -153,7 +154,7 @@ final class TaskStore {
     @discardableResult func permanentlyDelete(_ id: UUID) -> Bool {
         guard deleted.contains(where: { $0.id == id }) else { return false }
         let result = mutate { try service.repository.delete(id: id) }
-        if result { deletedIDs.removeAll { $0 == id } }
+        if result { deletedIDs.removeAll { $0 == id }; deletionSeries[id] = nil }
         return result
     }
     func prepareSessionEditor(taskID: UUID) -> Bool {

@@ -159,6 +159,7 @@ final class TimerCoordinator {
     }
 
     func setStatus(id: UUID, status: TaskStatus) throws {
+        guard failure == nil else { throw DataError.timerUnavailable }
         var state = try repository.snapshot()
         guard let index = state.tasks.firstIndex(where: { $0.id == id && $0.deletedAt == nil }) else { throw TaskError.notFound }
         guard state.tasks[index].status != status else { return }
@@ -177,6 +178,7 @@ final class TimerCoordinator {
     }
 
     func delete(id: UUID, disposition: RecurringDeletion = .stop) throws {
+        guard failure == nil else { throw DataError.timerUnavailable }
         var state = try repository.snapshot()
         guard let index = state.tasks.firstIndex(where: { $0.id == id && $0.deletedAt == nil }) else { throw TaskError.notFound }
         let change: (inout TaskSnapshot, TimeSample) throws -> UUID? = { state, now in

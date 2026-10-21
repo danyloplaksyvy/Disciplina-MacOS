@@ -140,6 +140,9 @@ final class AppDependencies {
             window.collectionBehavior = [.fullScreenPrimary]
             window.contentViewController = NSHostingController(rootView: MainWindowContent(dependencies: self,
                 openSettings: { [weak self] in self?.openSettings?() }))
+            // NSHostingController initially proposes its minimum size. Apply the
+            // intended initial content size after installing it, once per window.
+            window.setContentSize(NSSize(width: 860, height: 600))
             window.center()
             mainWindow = NSWindowController(window: window)
         }

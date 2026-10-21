@@ -69,7 +69,7 @@ struct TaskRowView: View {
                 .accessibilityLabel("\(item.isCompleted ? "Reopen" : "Complete") \(item.title)")
                 .accessibilityIdentifier("toggle-\(item.id)")
             if editing {
-                TextField("Task title", text: $draft).focused($editingFocused).onSubmit(save)
+                TextField("Task title", text: $draft).foregroundStyle(Color(nsColor: .textColor)).tint(Theme.accent).focused($editingFocused).onSubmit(save)
                     .onExitCommand { editing = false }.accessibilityIdentifier("edit-task")
                 Button("Save", action: save)
                 Button("Cancel") { editing = false }
