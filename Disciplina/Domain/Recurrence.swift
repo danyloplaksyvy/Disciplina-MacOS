@@ -60,7 +60,12 @@ extension TaskSnapshot {
         let tasksByID = Dictionary(uniqueKeysWithValues: tasks.map { ($0.id, $0) })
         var reserved = Set<UUID>()
         for task in tasks {
-            if let id = task.seriesID, seriesByID[id] == nil { throw DataError.invalidSnapshot }
+            if let id = task.seriesID {
+                guard let linked = seriesByID[id] else { throw DataError.invalidSnapshot }
+                if linked.enabled && !task.isCompleted && task.deletedAt == nil && linked.currentTaskID != task.id {
+                    throw DataError.invalidSnapshot
+                }
+            }
             if let day = task.scheduledDay { _ = try day.date() }
         }
         for value in series {

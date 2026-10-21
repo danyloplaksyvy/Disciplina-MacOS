@@ -51,9 +51,10 @@ struct TaskRowView: View {
     let store: TaskStore
     var compact = false
     var selected = false
+    var selectionFocused = true
     @Environment(\.controlActiveState) private var controlActiveState
     private var rowColor: Color {
-        selected ? Color(nsColor: controlActiveState == .inactive ? .unemphasizedSelectedTextColor : .selectedTextColor) : .primary
+        selected ? Color(nsColor: controlActiveState == .inactive || !selectionFocused ? .unemphasizedSelectedTextColor : .alternateSelectedControlTextColor) : .primary
     }
     @State private var recurringDelete = false
     var details: () -> Void = {}
@@ -84,7 +85,7 @@ struct TaskRowView: View {
                             Label(store.timer.running?.taskID == item.id ? "Running" : item.status == .inProgress ? "Paused" : item.status.title,
                                   systemImage: store.timer.running?.taskID == item.id ? "play.fill" : item.status == .inProgress ? "pause" : "circle")
                             Text(DurationText.concise(store.total(item.id))).monospacedDigit()
-                                                    if item.seriesID != nil { Image(systemName: "repeat").help("Recurring task") }
+                            if item.seriesID != nil { Image(systemName: "repeat").help("Recurring task") }
                         }.font(.caption).foregroundStyle(selected ? rowColor : Color.secondary)
                     }
                 }.frame(maxWidth: .infinity, alignment: .leading)
@@ -206,6 +207,7 @@ struct TaskDetailsView: View {
 
 struct MainTaskWindowView: View {
     let store: TaskStore
+    var openSettings: () -> Void = {}
     @State private var focusToken = 0
     @State private var selection: UUID?
     @State private var detailID: UUID?
@@ -217,7 +219,7 @@ struct MainTaskWindowView: View {
             HStack {
                 Text("My Tasks").font(.largeTitle.bold())
                 Spacer()
-                SettingsLink { Image(systemName: "gearshape") }.help("Settings")
+                Button(action: openSettings) { Image(systemName: "gearshape") }.help("Settings").accessibilityLabel("Settings")
             }
             TaskInputView(store: store, focusToken: focusToken)
             StoreErrorView(store: store)
@@ -270,7 +272,7 @@ struct MainTaskWindowView: View {
         if !items.isEmpty {
         Section("\(title) · \(items.count)") {
             ForEach(items) { item in
-                TaskRowView(item: item, store: store, selected: selection == item.id, details: { selection = item.id; detailID = item.id; listFocused = true }).tag(item.id)
+                TaskRowView(item: item, store: store, selected: selection == item.id, selectionFocused: listFocused, details: { selection = item.id; detailID = item.id; listFocused = true }).tag(item.id)
                     .transition(reduceMotion ? .identity : .opacity.combined(with: .move(edge: .top)))
             }
         }

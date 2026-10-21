@@ -90,6 +90,7 @@ final class TaskStore {
         do {
             if timer.failure != nil { try timer.recover() }
             refresh()
+            if !unavailable { calendarChanged() }
         } catch { errorMessage = error.localizedDescription; needsRefresh = true }
     }
 

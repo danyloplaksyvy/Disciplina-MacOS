@@ -6,6 +6,7 @@ final class AppCoordinator: NSObject, NSApplicationDelegate {
         ProcessInfo.processInfo.arguments.contains("--simulate-login-launch") || NSAppleEventManager.shared().currentAppleEvent?
             .paramDescriptor(forKeyword: keyAEPropData)?.enumCodeValue == keyAELaunchedAsLogInItem
     }
+    static var showMain: (() -> Void)?
     static var startServices: (() -> Void)?
     private var quietLaunch = false
     static var prepareToQuit: (() -> Bool)?
@@ -25,16 +26,14 @@ final class AppCoordinator: NSObject, NSApplicationDelegate {
     }
     func applicationDidFinishLaunching(_ notification: Notification) {
         Self.startServices?()
-        if quietLaunch {
-            DispatchQueue.main.async {
-                NSApp.windows.filter { $0.identifier?.rawValue == "main" }.forEach { $0.close() }
-            }
-        }
+        if !quietLaunch { Self.showMain?() }
     }
+
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         quietLaunch = false
-        return true // SwiftUI's unique Window scene handles Dock reopen.
+        Self.showMain?()
+        return false
     }
 }
 

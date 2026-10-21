@@ -58,6 +58,20 @@ final class DisciplinaUITests: XCTestCase {
         XCTAssertEqual(app.statusItems.count, 1)
     }
 
+    func testLoginStorageRecoveryRetainsOneStatusItem() {
+        app.terminate()
+        app.launchArguments = ["--ui-testing", "--simulate-login-launch", "--simulate-storage-failure"]
+        app.launch()
+        XCTAssertTrue(app.statusItems.firstMatch.waitForExistence(timeout: 5))
+        XCTAssertFalse(app.windows["main"].isHittable)
+        app.statusItems.firstMatch.click()
+        XCTAssertTrue(app.staticTexts["Unable to open tasks"].waitForExistence(timeout: 5))
+        app.buttons["Retry"].click()
+        XCTAssertEqual(app.statusItems.count, 1)
+        app.statusItems.firstMatch.click()
+        XCTAssertTrue(app.textFields["new-task"].waitForExistence(timeout: 5))
+    }
+
     func testDayCollapseAndRecurringTaskEditor() {
         add("Recurring practice")
         let list = app.outlines["main-task-list"]

@@ -9,11 +9,13 @@ final class AppDependencies {
     var dataError: String?
     let login = LoginItemService()
     private var testingMode = false
+    private var simulatedFailureConsumed = false
     private var persistence: PersistenceController?
     private var location: StoreLocation?
     private var capture: QuickCapturePanel?
     private var hotkeys: HotkeyService?
     private var menuBar: MenuBarCoordinator?
+    private var mainWindow: NSWindowController?
     private var ticker: Task<Void, Never>?
     private var dayTimer: Timer?
     private var calendarObservers: [(NotificationCenter, NSObjectProtocol)] = []
@@ -39,6 +41,7 @@ final class AppDependencies {
                 exit(EXIT_FAILURE)
             }
         }
+        AppCoordinator.showMain = { [weak self] in self?.showMain() }
         AppCoordinator.startServices = { [weak self] in self?.startServices() }
     }
     func startServices() {
@@ -50,12 +53,16 @@ final class AppDependencies {
     }
     func load() {
         guard store == nil else { return }
-        defer { if menuBar != nil { updateMenuContent() } }
+        defer { if store == nil, menuBar != nil { updateMenuContent() } }
 
         do {
             let testing = ProcessInfo.processInfo.arguments.contains("--ui-testing")
                 || ProcessInfo.processInfo.environment["DISCIPLINA_TESTING"] == "1"
             testingMode = testing
+            if testing && !simulatedFailureConsumed && ProcessInfo.processInfo.arguments.contains("--simulate-storage-failure") {
+                simulatedFailureConsumed = true
+                throw CocoaError(.fileReadCorruptFile)
+            }
             let persistence: PersistenceController
             if testing {
                 location = try StoreLocation(root: FileManager.default.temporaryDirectory.appendingPathComponent("Disciplina-ui-\(UUID().uuidString)"))
@@ -122,6 +129,23 @@ final class AppDependencies {
 
     func configureMenu(openMain: @escaping () -> Void, openSettings: @escaping () -> Void) {
         self.openMain = openMain; self.openSettings = openSettings
+    }
+    func showMain() {
+        if mainWindow == nil {
+            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 860, height: 600),
+                                  styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
+            window.title = "Disciplina"; window.identifier = NSUserInterfaceItemIdentifier("main")
+            window.isReleasedWhenClosed = false
+            window.contentMinSize = NSSize(width: 760, height: 400)
+            window.collectionBehavior = [.fullScreenPrimary]
+            window.contentViewController = NSHostingController(rootView: MainWindowContent(dependencies: self,
+                openSettings: { [weak self] in self?.openSettings?() }))
+            window.center()
+            mainWindow = NSWindowController(window: window)
+        }
+        mainWindow?.showWindow(nil)
+        mainWindow?.window?.makeKeyAndOrderFront(nil)
+        WindowCoordinator.activate()
     }
     private func ensureMenu() {
         guard menuBar == nil else { return }
@@ -200,3 +224,15 @@ final class AppDependencies {
 
 import KeyboardShortcuts
 import UniformTypeIdentifiers
+
+private struct MainWindowContent: View {
+    let dependencies: AppDependencies
+    let openSettings: () -> Void
+    var body: some View {
+        Group {
+            if let store = dependencies.store {
+                MainTaskWindowView(store: store, openSettings: openSettings).id(ObjectIdentifier(store))
+            } else { StartupFailureView(dependencies: dependencies) }
+        }
+    }
+}

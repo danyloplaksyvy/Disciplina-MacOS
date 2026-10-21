@@ -53,7 +53,8 @@ struct TaskSnapshot: Equatable, Codable, Sendable {
         for task in tasks {
             guard (task.status == .completed) == (task.completedAt != nil),
                   task.createdAt.timeIntervalSince1970.isFinite,
-                  task.updatedAt.timeIntervalSince1970.isFinite else { throw DataError.invalidSnapshot }
+                  task.updatedAt.timeIntervalSince1970.isFinite,
+                  [task.completedAt, task.deletedAt].compactMap({ $0 }).allSatisfy({ $0.timeIntervalSince1970.isFinite }) else { throw DataError.invalidSnapshot }
             _ = try TaskService.validatedTitle(task.title)
         }
         for session in sessions {

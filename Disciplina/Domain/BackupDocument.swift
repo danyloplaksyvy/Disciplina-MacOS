@@ -23,7 +23,7 @@ struct BackupDocument: Codable {
         exportedAt = try values.decode(Date.self, forKey: .exportedAt)
         tasks = try values.decode([TodoItem].self, forKey: .tasks)
         sessions = try values.decode([WorkSession].self, forKey: .sessions)
-        series = try values.decodeIfPresent([RecurrenceSeries].self, forKey: .series) ?? []
+        series = formatVersion >= 3 ? try values.decode([RecurrenceSeries].self, forKey: .series) : []
     }
     static func decode(_ data: Data) throws -> BackupDocument {
         let decoder = JSONDecoder(); decoder.dateDecodingStrategy = .millisecondsSince1970
