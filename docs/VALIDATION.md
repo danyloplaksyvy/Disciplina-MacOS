@@ -6,6 +6,25 @@
 
 Development host: Apple Silicon macOS, Command Line Tools with Swift 6.3.2, no full Xcode. The initial SwiftUI shell compiled and opened locally. Full app compilation requires missing SwiftUI/SwiftData macro plugins; GitHub Actions supplies Xcode.
 
+## v1.0.3 verification — October 21, 2026
+
+- Local Command Line Tools: **44 domain/store tests passed**. Recurrence coverage includes incomplete tasks spanning days, one late successor, repeated completion/checks, atomic timer-completion failure, restart, rename, schedule changes, skip/stop, guarded deletion Undo, independent restoration, historical reopening, post-commit refresh failure, JSON 1/2 compatibility and format 3 round-trip. Calendar coverage includes DST, midnight, time-zone regrouping and year boundaries.
+- Migration validation passed on a private SQLite snapshot of the installed V3 database using the final CI-built executable from `e60e29c`. Only the disposable copy was upgraded; no personal task/session records were committed or uploaded.
+- Final application/test source `e60e29c253b8e5a1bd00bdd05c0aaaafe39a467b` passed [GitHub Actions run 39648812844](https://github.com/danyloplaksyvy/Disciplina-MacOS/actions/runs/39648812844): **54 unit/persistence tests and 18 UI tests in each of light and dark appearance**, with zero failures. Native coverage includes quiet simulated login, startup-error recovery retaining one icon, unique-window reopening, recurrence editing and Settings management, collapsible day groups, session editors, native text Undo, task Undo, Finder capture, and the full-screen popover.
+- Persistence tests cover WAL-backed V1/V2/V3→V4 migrations, unchanged source records, failure before activation, series rollback, disk reopen and staged restore. Recurrence Undo retains its transaction receipt across post-commit refresh failures.
+- Inspected light/dark screenshots confirm contrasting selected-row titles, metadata, timer controls and actions; the default 860 × 600 content size and readable side-by-side details are preserved.
+- The downloaded clean Release app passed `codesign --verify --deep --strict`. Metadata confirms **1.0.3, build 4**, an ad-hoc signature, arm64 architecture, the source commit above, and no XCTest frameworks. Archive: `build/v1.0.3/Disciplina-arm64-development.zip` (ignored output), SHA-256 `3438081a283d56d01a62762c7fec1c554fc891ba5151056a0af5c8267473e6bb`.
+
+### Remaining device checks
+
+- [ ] Real logout/login through `SMAppService`, including focus ownership and shortcut readiness.
+- [ ] macOS 14 runtime, rendering and migration.
+- [ ] Secondary monitors, multiple Spaces and other applications in native full screen.
+- [ ] VoiceOver, increased contrast, inactive-window selection and Reduce Motion on a physical device.
+- [ ] Physical sleep/wake, 1,000-task interactive performance and warm capture latency.
+
+Version **1.0.3**, build **4** remains a development build pending these device checks.
+
 ## v1.0.2 verification — October 21, 2026
 
 - Local Command Line Tools: **35 domain/store tests passed**. Added coverage includes duration parsing and overflow, manual session provenance, status and identity preservation, session deletion, automatic pause, failed writes, post-pause refresh failure, legacy JSON import, format 2 round-trip, and structural animation revisions.
