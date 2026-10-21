@@ -217,10 +217,10 @@ final class DisciplinaUITests: XCTestCase {
         app.sheets.firstMatch.buttons["Save"].click()
         XCTAssertTrue(app.staticTexts["00:01:00"].firstMatch.waitForExistence(timeout: 3))
         app.buttons["Delete session…"].click()
-        app.buttons["Cancel"].click()
+        app.sheets.firstMatch.buttons["Cancel"].click()
         XCTAssertTrue(app.staticTexts["Manually added"].exists)
         app.buttons["Delete session…"].click()
-        app.buttons["Delete session"].click()
+        app.sheets.firstMatch.buttons["Delete session"].click()
         XCTAssertTrue(app.staticTexts["No work sessions yet."].waitForExistence(timeout: 3))
         close.click()
         XCTAssertFalse(close.exists)
@@ -254,7 +254,8 @@ final class DisciplinaUITests: XCTestCase {
     func testPopoverAboveFullScreenTaskWindow() {
         let window = app.windows["main"]
         let initialHeight = window.frame.height
-        app.typeKey("f", modifierFlags: [.command, .control])
+        app.menuBars.menuBarItems["View"].click()
+        app.menuItems["Enter Full Screen"].click()
         let fullscreen = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
             window.frame.height > initialHeight + 20
         }, object: nil)
@@ -267,7 +268,8 @@ final class DisciplinaUITests: XCTestCase {
         let screenshot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
         screenshot.name = "popover-above-full-screen"; screenshot.lifetime = .keepAlways; add(screenshot)
         app.statusItems.firstMatch.click()
-        app.typeKey("f", modifierFlags: [.command, .control])
+        app.menuBars.menuBarItems["View"].click()
+        app.menuItems["Exit Full Screen"].click()
     }
 
 }
