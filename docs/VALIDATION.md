@@ -6,6 +6,25 @@
 
 Development host: Apple Silicon macOS, Command Line Tools with Swift 6.3.2, no full Xcode. The initial SwiftUI shell compiled and opened locally. Full app compilation requires missing SwiftUI/SwiftData macro plugins; GitHub Actions supplies Xcode.
 
+## v1.0.2 verification — October 21, 2026
+
+- Local Command Line Tools: **35 domain/store tests passed**. Added coverage includes duration parsing and overflow, manual session provenance, status and identity preservation, session deletion, automatic pause, failed writes, post-pause refresh failure, legacy JSON import, format 2 round-trip, and structural animation revisions.
+- Final application/test commit `484475f`: [GitHub Actions run 39595614400](https://github.com/danyloplaksyvy/Disciplina-MacOS/actions/runs/39595614400) passed all jobs: **43 unit/persistence tests and 14 UI tests in each of light and dark appearance**, with zero failures. Persistence coverage includes WAL-backed V1→V3 and manifested V2→V3 migrations, a simulated failure before manifest publication, source preservation, and persistence of edited/manual sessions across reopen.
+- Inspected light/dark screenshots confirm readable list/detail proportions, two-line row titles, visible controls, full titles in details, and the Close details action. The final full-screen screenshot confirms the popover is above the task window and its capture field owns visible keyboard focus.
+- Native UI coverage includes session addition/editing/cancellation/deletion, pause-on-editor-open, existing task CRUD and Undo, capture from Finder, popover typing without clicking the input, Escape dismissal, and capture through the popover above the app’s native full-screen window after revealing the auto-hidden menu bar.
+- The downloaded Release app was verified locally using `codesign --verify --deep --strict`; metadata confirms version 1.0.2, build 3, source `484475f7c52965e0a3c4f6cee4c4c36cb5a8c7b7`, and no XCTest framework. Local archive: `build/v1.0.2/Disciplina-arm64-development.zip` (ignored output).
+- Schema V2 is frozen; V3 upgrades occur on a consistent snapshot before atomically selecting the validated generation. JSON exports now use format 2; format 1 imports remain supported.
+
+### Remaining device checks
+
+- [ ] macOS 14 runtime and rendering.
+- [ ] Popover presentation over other apps in native full screen, across Spaces and secondary monitors.
+- [ ] Divider dragging and minimum-size behavior with accessibility text settings.
+- [ ] Physical-device Reduce Motion, VoiceOver, increased contrast, and rapid task-action animation review.
+- [ ] Previously pending physical sleep/wake, login launch, 1,000-task interactive performance, and warm capture latency checks.
+
+Version **1.0.2**, build **3** remains a development build pending these device checks.
+
 ## v1.0.1 verification — October 20, 2026
 
 - Final application commit `1a05a12`: [GitHub Actions run 39467805516](https://github.com/danyloplaksyvy/Disciplina-MacOS/actions/runs/39467805516) passed on macOS 26 / Xcode 26.6: **34 unit tests and 10 UI tests in each of light and dark appearance**, with zero failures.
