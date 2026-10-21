@@ -43,11 +43,11 @@ final class StoreLocation {
                                                         appropriateFor: nil, create: true)
         try FileManager.default.createDirectory(at: self.root, withIntermediateDirectories: true)
     }
-    private struct Manifest: Codable { let directory: String }
+    private struct Manifest: Codable { let directory: String; var schemaVersion: Int? = nil }
     func publish(_ url: URL) throws {
         let directory = url.deletingLastPathComponent().lastPathComponent
         guard UUID(uuidString: directory) != nil else { throw DataError.invalidSnapshot }
-        try JSONEncoder().encode(Manifest(directory: directory)).write(to: manifest, options: .atomic)
+        try JSONEncoder().encode(Manifest(directory: directory, schemaVersion: 3)).write(to: manifest, options: .atomic)
     }
     func newURL() throws -> URL {
         let directory = root.appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -61,14 +61,29 @@ final class StoreLocation {
         try DatabaseBackup.copy(from: url, to: backup)
         return backup
     }
-    func open() throws -> PersistenceController {
+    func open(beforePublish: () throws -> Void = {}) throws -> PersistenceController {
         if FileManager.default.fileExists(atPath: manifest.path) {
             let value = try JSONDecoder().decode(Manifest.self, from: Data(contentsOf: manifest))
             guard UUID(uuidString: value.directory) != nil else { throw DataError.invalidSnapshot }
             let url = root.appendingPathComponent(value.directory).appendingPathComponent("default.store")
             guard FileManager.default.fileExists(atPath: url.path) else { throw CocoaError(.fileNoSuchFile) }
-            let persistence = try PersistenceController(url: url)
-            try SwiftDataTaskRepository(context: persistence.container.mainContext).snapshot().validate()
+            if value.schemaVersion == 3 {
+                let persistence = try PersistenceController(url: url)
+                try SwiftDataTaskRepository(context: persistence.container.mainContext).snapshot().validate()
+                return persistence
+            }
+            guard value.schemaVersion == nil || value.schemaVersion == 2 else { throw DataError.unsupportedVersion }
+            let backup = try backup(url)
+            let inspection = try newURL()
+            try DatabaseBackup.copy(from: backup, to: inspection)
+            let expected = try readV2(inspection)
+            let target = try newURL()
+            try DatabaseBackup.copy(from: backup, to: target)
+            let persistence = try PersistenceController(url: target)
+            let actual = try SwiftDataTaskRepository(context: persistence.container.mainContext).snapshot()
+            try verify(actual, matches: expected)
+            try beforePublish()
+            try publish(target)
             return persistence
         }
         let legacy = root.appendingPathComponent("default.store")
@@ -90,6 +105,7 @@ final class StoreLocation {
             guard state.tasks.sorted(by: { $0.id.uuidString < $1.id.uuidString }) == expected.sorted(by: { $0.id.uuidString < $1.id.uuidString }),
                   state.sessions.isEmpty else { throw DataError.invalidSnapshot }
         }
+        try beforePublish()
         try publish(target)
         return persistence
     }
@@ -109,6 +125,24 @@ final class StoreLocation {
         try beforePublish()
         try publish(url)
         return replacement
+    }
+
+    private func verify(_ actual: TaskSnapshot, matches expected: TaskSnapshot) throws {
+        try actual.validate()
+        guard actual.tasks.sorted(by: { $0.id.uuidString < $1.id.uuidString }) == expected.tasks.sorted(by: { $0.id.uuidString < $1.id.uuidString }),
+              actual.sessions.sorted(by: { $0.id.uuidString < $1.id.uuidString }) == expected.sessions.sorted(by: { $0.id.uuidString < $1.id.uuidString }) else { throw DataError.invalidSnapshot }
+    }
+    private func readV2(_ url: URL) throws -> TaskSnapshot {
+        let schema = Schema(versionedSchema: TaskSchemaV2.self)
+        let configuration = ModelConfiguration(schema: schema, url: url, cloudKitDatabase: .none)
+        let container = try ModelContainer(for: schema, configurations: [configuration])
+        let tasks = try container.mainContext.fetch(FetchDescriptor<TaskSchemaV2.TaskRecord>())
+        let sessions = try container.mainContext.fetch(FetchDescriptor<TaskSchemaV2.SessionRecord>())
+        guard tasks.allSatisfy({ TaskStatus(rawValue: $0.statusRaw) != nil }),
+              sessions.allSatisfy({ $0.endReasonRaw == nil || SessionEndReason(rawValue: $0.endReasonRaw!) != nil }) else { throw DataError.invalidSnapshot }
+        let state = TaskSnapshot(tasks: tasks.map(\.item), sessions: sessions.map(\.item))
+        try state.validate()
+        return state
     }
 
     private func readV1(_ url: URL) throws -> [TodoItem] {

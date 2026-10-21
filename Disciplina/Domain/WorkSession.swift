@@ -1,8 +1,10 @@
 import Foundation
 
 enum SessionEndReason: String, Codable, Sendable {
-    case paused, switchedTask, completed, movedToTodo, deleted, systemSleep, appQuit, interrupted
+    case paused, switchedTask, completed, movedToTodo, deleted, systemSleep, appQuit, interrupted, manuallyAdded
 }
+
+enum SessionOrigin: String, Codable, Sendable { case timer, manual }
 
 struct WorkSession: Identifiable, Equatable, Codable, Sendable {
     let id: UUID
@@ -12,6 +14,27 @@ struct WorkSession: Identifiable, Equatable, Codable, Sendable {
     var accumulatedMilliseconds: Int64 = 0
     var lastCheckpointAt: Date?
     var endReason: SessionEndReason?
+    var origin: SessionOrigin = .timer
+    var durationEditedAt: Date?
+}
+
+// Format 1 backups predate session provenance. Keep their decoding explicit.
+extension WorkSession {
+    enum CodingKeys: String, CodingKey {
+        case id, taskID, startedAt, endedAt, accumulatedMilliseconds, lastCheckpointAt, endReason, origin, durationEditedAt
+    }
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        id = try values.decode(UUID.self, forKey: .id)
+        taskID = try values.decode(UUID.self, forKey: .taskID)
+        startedAt = try values.decode(Date.self, forKey: .startedAt)
+        endedAt = try values.decodeIfPresent(Date.self, forKey: .endedAt)
+        accumulatedMilliseconds = try values.decode(Int64.self, forKey: .accumulatedMilliseconds)
+        lastCheckpointAt = try values.decodeIfPresent(Date.self, forKey: .lastCheckpointAt)
+        endReason = try values.decodeIfPresent(SessionEndReason.self, forKey: .endReason)
+        origin = try values.decodeIfPresent(SessionOrigin.self, forKey: .origin) ?? .timer
+        durationEditedAt = try values.decodeIfPresent(Date.self, forKey: .durationEditedAt)
+    }
 }
 
 struct TaskSnapshot: Equatable, Codable, Sendable {
@@ -34,6 +57,10 @@ struct TaskSnapshot: Equatable, Codable, Sendable {
             guard let task = byID[session.taskID], session.accumulatedMilliseconds >= 0,
                   (session.endedAt == nil) == (session.endReason == nil),
                   session.lastCheckpointAt != nil,
+                  session.startedAt.timeIntervalSince1970.isFinite,
+                  [session.endedAt, session.lastCheckpointAt, session.durationEditedAt].compactMap({ $0 }).allSatisfy({ $0.timeIntervalSince1970.isFinite }),
+                  session.origin != .manual || (session.endedAt == session.startedAt && session.lastCheckpointAt == session.startedAt && session.endReason == .manuallyAdded),
+                  session.origin != .timer || session.endReason != .manuallyAdded,
                   session.endedAt != nil || (task.status == .inProgress && task.deletedAt == nil)
             else { throw DataError.invalidSnapshot }
             let sum = (totals[task.id] ?? 0).addingReportingOverflow(session.accumulatedMilliseconds)

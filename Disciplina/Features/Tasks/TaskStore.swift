@@ -3,6 +3,8 @@ import Observation
 
 @MainActor @Observable
 final class TaskStore {
+    private(set) var structureRevision = 0
+    private var structure: [[UUID]] { [inProgress.map(\.id), todo.map(\.id), completed.map(\.id)] }
     let service: TaskService
     let timer: TimerCoordinator
     private(set) var sessions: [WorkSession] = []
@@ -129,10 +131,26 @@ final class TaskStore {
         if result { deletedIDs.removeAll { $0 == id } }
         return result
     }
+    func prepareSessionEditor(taskID: UUID) -> Bool {
+        guard !unavailable else { return false }
+        if timer.running?.taskID == taskID, !pause() { return false }
+        return !unavailable && items.contains { $0.id == taskID }
+    }
+    @discardableResult func addSession(taskID: UUID, date: Date, milliseconds: Int64) -> Bool {
+        mutate { try timer.addSession(taskID: taskID, date: date, milliseconds: milliseconds) }
+    }
+    @discardableResult func editSession(taskID: UUID, sessionID: UUID, milliseconds: Int64) -> Bool {
+        mutate { try timer.editSession(taskID: taskID, sessionID: sessionID, milliseconds: milliseconds) }
+    }
+    @discardableResult func deleteSession(taskID: UUID, sessionID: UUID) -> Bool {
+        mutate { try timer.deleteSession(taskID: taskID, sessionID: sessionID) }
+    }
+
     func dismissError() { if !needsRefresh { errorMessage = nil } }
 
     private func mutate(_ action: () throws -> Void) -> Bool {
         guard !unavailable else { return false }
+        let previousStructure = structure
         do { try action() } catch {
             errorMessage = "Could not save the change. \(error.localizedDescription)"
             return false
@@ -141,6 +159,7 @@ final class TaskStore {
             let snapshot = try service.repository.snapshot()
             try snapshot.validate()
             publish(snapshot)
+            if structure != previousStructure { structureRevision += 1 }
             errorMessage = nil
         } catch {
             needsRefresh = true

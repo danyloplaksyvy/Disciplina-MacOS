@@ -186,4 +186,41 @@ final class TimerCoordinator {
             try repository.commit(state)
         }
     }
+    private func changeSessions(taskID: UUID, change: (inout TaskSnapshot, Date) throws -> Void) throws {
+        guard failure == nil else { throw DataError.timerUnavailable }
+        guard running?.taskID != taskID else { throw SessionEditError.running }
+        var state = try repository.snapshot()
+        guard let task = state.tasks.firstIndex(where: { $0.id == taskID && $0.deletedAt == nil }) else { throw SessionEditError.missing }
+        let date = sample().date
+        try change(&state, date)
+        state.tasks[task].updatedAt = date
+        try state.validate()
+        try repository.commit(state)
+    }
+
+    func addSession(taskID: UUID, date: Date, milliseconds: Int64) throws {
+        guard milliseconds > 0, date.timeIntervalSince1970.isFinite else { throw SessionEditError.invalidDuration }
+        try changeSessions(taskID: taskID) { state, _ in
+            state.sessions.append(WorkSession(id: makeID(), taskID: taskID, startedAt: date, endedAt: date,
+                accumulatedMilliseconds: milliseconds, lastCheckpointAt: date, endReason: .manuallyAdded, origin: .manual))
+        }
+    }
+    func editSession(taskID: UUID, sessionID: UUID, milliseconds: Int64) throws {
+        guard milliseconds >= 0 else { throw SessionEditError.invalidDuration }
+        let existing = try repository.snapshot().sessions.first { $0.id == sessionID && $0.taskID == taskID }
+        guard let existing, existing.endedAt != nil else { throw SessionEditError.missing }
+        if existing.accumulatedMilliseconds == milliseconds { return }
+        try changeSessions(taskID: taskID) { state, date in
+            guard let index = state.sessions.firstIndex(where: { $0.id == sessionID && $0.taskID == taskID && $0.endedAt != nil }) else { throw SessionEditError.missing }
+            state.sessions[index].accumulatedMilliseconds = milliseconds
+            state.sessions[index].durationEditedAt = date
+        }
+    }
+    func deleteSession(taskID: UUID, sessionID: UUID) throws {
+        try changeSessions(taskID: taskID) { state, _ in
+            guard state.sessions.contains(where: { $0.id == sessionID && $0.taskID == taskID && $0.endedAt != nil }) else { throw SessionEditError.missing }
+            state.sessions.removeAll { $0.id == sessionID }
+        }
+    }
+
 }

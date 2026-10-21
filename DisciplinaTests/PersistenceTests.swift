@@ -55,7 +55,7 @@ struct PersistenceTests {
         try repo.delete(id: id)
         let reopened = try PersistenceController(url: url)
         #expect(try SwiftDataTaskRepository(context: reopened.container.mainContext).fetchAll().isEmpty)
-        #expect(TaskMigrationPlan.schemas.count == 2)
+        #expect(TaskMigrationPlan.schemas.count == 3)
     }
     @Test(arguments: [0, 2, 1000]) func migratesRealV1StoreAndKeepsOriginal(count: Int) throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
@@ -81,6 +81,42 @@ struct PersistenceTests {
         #expect(state.sessions.isEmpty)
         #expect(try old.mainContext.fetch(FetchDescriptor<TaskSchemaV1.TaskRecord>()).count == count)
         #expect(try location.open().url == migrated.url)
+    }
+
+    @Test func migratesManifestedV2WithoutChangingOriginal() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let location = try StoreLocation(root: root)
+        let original = try location.newURL()
+        let date = Date(timeIntervalSince1970: 123)
+        let item = TodoItem(id: UUID(), title: "V2 task", createdAt: date, updatedAt: date, completedAt: nil, status: .inProgress)
+        let session = WorkSession(id: UUID(), taskID: item.id, startedAt: date, endedAt: date + 10,
+            accumulatedMilliseconds: 9345, lastCheckpointAt: date + 10, endReason: .paused)
+        let schema = Schema(versionedSchema: TaskSchemaV2.self)
+        let old = try ModelContainer(for: schema, configurations: [ModelConfiguration(schema: schema, url: original, cloudKitDatabase: .none)])
+        old.mainContext.autosaveEnabled = false
+        old.mainContext.insert(TaskSchemaV2.TaskRecord(item))
+        old.mainContext.insert(TaskSchemaV2.SessionRecord(session))
+        try old.mainContext.save()
+        let manifest = root.appendingPathComponent("Disciplina-store.json")
+        let manifestData = try JSONSerialization.data(withJSONObject: ["directory": original.deletingLastPathComponent().lastPathComponent])
+        try manifestData.write(to: manifest)
+        #expect(throws: (any Error).self) {
+            _ = try location.open { throw CocoaError(.fileWriteOutOfSpace) }
+        }
+        #expect(try Data(contentsOf: manifest) == manifestData)
+        let migrated = try location.open()
+        #expect(migrated.url != original)
+        let state = try SwiftDataTaskRepository(context: migrated.container.mainContext).snapshot()
+        #expect(state == TaskSnapshot(tasks: [item], sessions: [session]))
+        #expect(try old.mainContext.fetch(FetchDescriptor<TaskSchemaV2.SessionRecord>()).first?.item == session)
+        #expect(try location.open().url == migrated.url)
+        let repo = SwiftDataTaskRepository(context: migrated.container.mainContext)
+        let timer = TimerCoordinator(repository: repo)
+        try timer.editSession(taskID: item.id, sessionID: session.id, milliseconds: 12345)
+        try timer.addSession(taskID: item.id, date: date, milliseconds: 1000)
+        let reopened = try location.open()
+        #expect(try SwiftDataTaskRepository(context: reopened.container.mainContext).snapshot() == repo.snapshot())
     }
 
     @Test func stagedRestoreFailurePreservesCurrentStore() throws {

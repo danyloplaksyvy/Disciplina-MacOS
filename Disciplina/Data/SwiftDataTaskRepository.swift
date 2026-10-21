@@ -13,6 +13,7 @@ final class SwiftDataTaskRepository: TaskRepository {
         let tasks = try context.fetch(FetchDescriptor<TaskRecord>())
         let sessions = try context.fetch(FetchDescriptor<SessionRecord>())
         guard tasks.allSatisfy({ TaskStatus(rawValue: $0.statusRaw) != nil }),
+              sessions.allSatisfy({ SessionOrigin(rawValue: $0.originRaw) != nil }),
               sessions.allSatisfy({ $0.endReasonRaw == nil || SessionEndReason(rawValue: $0.endReasonRaw!) != nil })
         else { throw DataError.invalidSnapshot }
         return TaskSnapshot(tasks: tasks.map(\.item), sessions: sessions.map(\.item))

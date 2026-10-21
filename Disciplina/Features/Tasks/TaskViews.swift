@@ -70,7 +70,7 @@ struct TaskRowView: View {
                     Text(item.title).strikethrough(item.isCompleted)
                         .onTapGesture(count: 2) { if !compact { draft = item.title; editing = true; editingFocused = true } }
                         .foregroundStyle(item.isCompleted ? .secondary : .primary)
-                        .lineLimit(compact ? 2 : nil)
+                        .lineLimit(2).truncationMode(.tail).help(item.title)
                     if !compact {
                         HStack {
                             Label(store.timer.running?.taskID == item.id ? "Running" : item.status == .inProgress ? "Paused" : item.status.title,
@@ -79,7 +79,7 @@ struct TaskRowView: View {
                         }.font(.caption).foregroundStyle(.secondary)
                     }
                 }.frame(maxWidth: .infinity, alignment: .leading)
-                TimerControls(item: item, store: store)
+                TimerControls(item: item, store: store).fixedSize()
                 if !compact {
                     Menu { actions } label: { Image(systemName: "ellipsis") }
                         .menuStyle(.borderlessButton).fixedSize().accessibilityLabel("Actions for \(item.title)")
@@ -109,10 +109,18 @@ struct TaskRowView: View {
 struct TaskDetailsView: View {
     let item: TodoItem
     let store: TaskStore
+    let close: () -> Void
+    @State private var editor: SessionEditorRequest?
+    @State private var deleting: UUID?
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
-                Text(item.title).font(.title2).textSelection(.enabled)
+                HStack(alignment: .top) {
+                    Text(item.title).font(.title2).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
+                    Button(action: close) { Image(systemName: "xmark") }
+                        .accessibilityLabel("Close details").help("Close details")
+                }
                 Text(item.status.title)
                 Text("Created \(item.createdAt.formatted())")
                 if let date = item.completedAt { Text("Completed \(date.formatted())") }
@@ -120,7 +128,11 @@ struct TaskDetailsView: View {
                     .accessibilityLabel("Total time \(DurationText.precise(store.total(item.id)))")
                 TimerControls(item: item, store: store)
                 Divider()
-                Text("Work sessions").font(.headline)
+                HStack {
+                    Text("Work sessions").font(.headline)
+                    Spacer()
+                    Button("Add time…") { openEditor(nil) }.disabled(store.unavailable)
+                }
                 let sessions = store.sessions.filter { $0.taskID == item.id }.sorted {
                     $0.startedAt == $1.startedAt ? $0.id.uuidString < $1.id.uuidString : $0.startedAt < $1.startedAt
                 }
@@ -128,13 +140,39 @@ struct TaskDetailsView: View {
                 ForEach(sessions) { session in
                     VStack(alignment: .leading, spacing: 4) {
                         Text(session.startedAt.formatted())
-                        Text(session.endedAt.map { "Ended \($0.formatted())" } ?? "Running")
+                        if session.origin == .manual { Text("Manually added") }
+                        else { Text(session.endedAt.map { "Ended \($0.formatted())" } ?? "Running") }
                         Text(DurationText.precise(session.id == store.timer.running?.id ? store.timer.elapsedMilliseconds : session.accumulatedMilliseconds))
-                        if let reason = session.endReason { Text(reason.title).foregroundStyle(.secondary) }
+                        if session.origin != .manual, let reason = session.endReason { Text(reason.title).foregroundStyle(.secondary) }
+                        if let edited = session.durationEditedAt { Text("Duration edited \(edited.formatted())").foregroundStyle(.secondary) }
+                        HStack {
+                            Button("Edit duration") { openEditor(session.id) }
+                            Button("Delete session…", role: .destructive) {
+                                guard store.prepareSessionEditor(taskID: item.id) else { return }
+                                deleting = session.id
+                            }
+                        }.disabled(store.unavailable)
                     }.font(.caption).padding(.vertical, 5)
                 }
             }.padding().frame(maxWidth: .infinity, alignment: .leading)
-        }.frame(minWidth: 220, idealWidth: 280)
+        }.frame(minWidth: 300).accessibilityIdentifier("task-details")
+            .sheet(item: $editor) { request in
+                SessionEditorView(taskID: item.id, session: request.session, store: store)
+            }
+            .alert("Delete this work session?", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } })) {
+                Button("Cancel", role: .cancel) { deleting = nil }
+                Button("Delete session", role: .destructive) {
+                    if let id = deleting { store.deleteSession(taskID: item.id, sessionID: id) }
+                    deleting = nil
+                }
+            } message: { Text("Its recorded duration will be removed from the task total. This cannot be undone.") }
+    }
+    private func openEditor(_ id: UUID?) {
+        guard store.prepareSessionEditor(taskID: item.id) else { return }
+        if let id {
+            guard let session = store.sessions.first(where: { $0.id == id }) else { return }
+            editor = SessionEditorRequest(session: session)
+        } else { editor = SessionEditorRequest(session: nil) }
     }
 }
 
@@ -143,6 +181,7 @@ struct MainTaskWindowView: View {
     @State private var focusToken = 0
     @State private var selection: UUID?
     @State private var detailID: UUID?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @FocusState private var listFocused: Bool
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -161,12 +200,12 @@ struct MainTaskWindowView: View {
                     Button("Dismiss") { store.notice = nil }
                 }
             }
-            HSplitView {
+            TaskDetailSplit(showsDetails: store.items.contains { $0.id == detailID }) {
                 List(selection: $selection) {
                     group("In Progress", store.inProgress)
                     group("To Do", store.todo)
                     group("Completed", store.completed)
-                }.listStyle(.inset).focused($listFocused).accessibilityIdentifier("main-task-list")
+                }.animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: store.structureRevision).listStyle(.inset).focused($listFocused).accessibilityIdentifier("main-task-list")
                     .onKeyPress(.space) {
                         guard listFocused, let item = store.items.first(where: { $0.id == selection }) else { return .ignored }
                         store.setCompleted(id: item.id, isCompleted: !item.isCompleted); return .handled
@@ -176,16 +215,20 @@ struct MainTaskWindowView: View {
                         detailID = selection; return .handled
                     }
                     .onChange(of: selection) { detailID = selection }
-                if let item = store.items.first(where: { $0.id == detailID }) { TaskDetailsView(item: item, store: store) }
+            } details: {
+                if let item = store.items.first(where: { $0.id == detailID }) {
+                    TaskDetailsView(item: item, store: store, close: { detailID = nil }).id(item.id)
+                }
             }
             Text("\(store.items.count) tasks · Local storage").font(.caption).foregroundStyle(.secondary)
-        }.padding(24).frame(minWidth: 600, minHeight: 400).tint(Theme.accent)
+        }.padding(24).frame(minWidth: 760, minHeight: 400).tint(Theme.accent)
             .onReceive(NotificationCenter.default.publisher(for: .focusNewTask)) { _ in focusToken += 1 }
     }
     @ViewBuilder private func group(_ title: String, _ items: [TodoItem]) -> some View {
         Section("\(title) · \(items.count)") {
             ForEach(items) { item in
                 TaskRowView(item: item, store: store, details: { detailID = item.id }).tag(item.id)
+                    .transition(reduceMotion ? .identity : .opacity.combined(with: .move(edge: .top)))
             }
             if items.isEmpty { Text("No tasks").foregroundStyle(.secondary) }
         }
@@ -193,17 +236,17 @@ struct MainTaskWindowView: View {
 }
 
 struct MenuBarTaskView: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let store: TaskStore
     let metrics: PopoverMetrics
     let openMain: () -> Void
     let openSettings: () -> Void
-    @State private var focusToken = 0
     private var maximumHeight: CGFloat { metrics.maximumHeight }
     var body: some View {
         QuickActionsLayout(maximumHeight: maximumHeight - 32,
                            desiredListHeight: min(CGFloat(store.relevant.count) * 70, 260)) {
             VStack(alignment: .leading, spacing: 12) {
-                TaskInputView(store: store, focusToken: focusToken)
+                TaskInputView(store: store, focusToken: metrics.focusToken)
                 StoreErrorView(store: store)
                 if let item = store.featured {
                     VStack(alignment: .leading, spacing: 6) {
@@ -220,7 +263,10 @@ struct MenuBarTaskView: View {
                 } else { Text("Ready when you are").foregroundStyle(.secondary) }
             }.fixedSize(horizontal: false, vertical: true)
             ScrollView {
-                VStack { ForEach(store.relevant) { TaskRowView(item: $0, store: store, compact: true) } }
+                VStack { ForEach(store.relevant) {
+                    TaskRowView(item: $0, store: store, compact: true)
+                        .transition(reduceMotion ? .identity : .opacity.combined(with: .move(edge: .top)))
+                } }.animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: store.structureRevision)
             }.accessibilityIdentifier("popover-task-list")
             VStack(alignment: .leading, spacing: 8) {
                 if let notice = store.notice { Text(notice).font(.caption).lineLimit(2) }
@@ -233,7 +279,7 @@ struct MenuBarTaskView: View {
                 }
             }.fixedSize(horizontal: false, vertical: true)
         }.padding(16).frame(width: 380).tint(Theme.accent)
-            .onAppear { focusToken += 1 }
+
     }
 }
 

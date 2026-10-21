@@ -189,4 +189,68 @@ final class DisciplinaUITests: XCTestCase {
         app.buttons["Open Disciplina"].click()
         XCTAssertTrue(app.buttons["Reopen Shared task"].waitForExistence(timeout: 3))
     }
+    func testDetailsLayoutAndSessionEditing() {
+        add("A long task title that must remain readable while its details are open")
+        let list = app.outlines["main-task-list"]
+        list.staticTexts.firstMatch.click()
+        // Open explicitly rather than relying on which section header is first.
+        list.staticTexts["A long task title that must remain readable while its details are open"].click()
+        let close = app.buttons["Close details"]
+        XCTAssertTrue(close.waitForExistence(timeout: 3))
+        XCTAssertGreaterThanOrEqual(list.frame.width, 360)
+        let snapshot = XCTAttachment(screenshot: app.windows["main"].screenshot())
+        snapshot.name = "readable-task-details"; snapshot.lifetime = .keepAlways; add(snapshot)
+        app.buttons["Add time…"].click()
+        let sheet = app.sheets.firstMatch
+        XCTAssertTrue(sheet.waitForExistence(timeout: 3))
+        let minutes = sheet.textFields["duration-minutes"]
+        minutes.click(); minutes.typeKey("a", modifierFlags: .command); minutes.typeText("2")
+        sheet.buttons["Save"].click()
+        XCTAssertTrue(app.staticTexts["Manually added"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["00:02:00"].firstMatch.exists)
+        app.buttons["Edit duration"].click()
+        let editMinutes = app.sheets.firstMatch.textFields["duration-minutes"]
+        editMinutes.click(); editMinutes.typeKey("a", modifierFlags: .command); editMinutes.typeText("1")
+        app.sheets.firstMatch.buttons["Cancel"].click()
+        XCTAssertTrue(app.staticTexts["00:02:00"].firstMatch.exists)
+        app.buttons["Edit duration"].click()
+        let savedMinutes = app.sheets.firstMatch.textFields["duration-minutes"]
+        savedMinutes.click(); savedMinutes.typeKey("a", modifierFlags: .command); savedMinutes.typeText("1")
+        app.sheets.firstMatch.buttons["Save"].click()
+        XCTAssertTrue(app.staticTexts["00:01:00"].firstMatch.waitForExistence(timeout: 3))
+        app.buttons["Delete session…"].click()
+        app.buttons["Cancel"].click()
+        XCTAssertTrue(app.staticTexts["Manually added"].exists)
+        app.buttons["Delete session…"].click()
+        app.buttons["Delete session"].click()
+        XCTAssertTrue(app.staticTexts["No work sessions yet."].waitForExistence(timeout: 3))
+        close.click()
+        XCTAssertFalse(close.exists)
+        XCTAssertGreaterThan(list.frame.width, 650)
+    }
+
+    func testOpeningTimeEditorPausesAndCancelDoesNotResume() {
+        add("Pause for editing")
+        app.buttons["Start Pause for editing"].click()
+        expectMenuBarStatus("Disciplina: Timing Pause for editing")
+        app.outlines["main-task-list"].staticTexts["Pause for editing"].click()
+        app.buttons["Add time…"].click()
+        XCTAssertTrue(app.sheets.firstMatch.waitForExistence(timeout: 3))
+        expectMenuBarStatus("Disciplina: 1 active task")
+        app.sheets.firstMatch.buttons["Cancel"].click()
+        XCTAssertTrue(app.buttons["Resume Pause for editing"].firstMatch.exists)
+        XCTAssertFalse(app.buttons["Pause Pause for editing"].exists)
+    }
+
+    func testPopoverAcceptsTypingOverAnotherApplication() {
+        let finder = XCUIApplication(bundleIdentifier: "com.apple.finder")
+        finder.activate()
+        app.statusItems.firstMatch.click()
+        XCTAssertTrue(app.buttons["Open Disciplina"].waitForExistence(timeout: 3))
+        app.typeText("Popover focused without clicking\n")
+        let popoverList = app.descendants(matching: .any)["popover-task-list"].firstMatch
+        XCTAssertTrue(popoverList.staticTexts["Popover focused without clicking"].waitForExistence(timeout: 3))
+        app.statusItems.firstMatch.click()
+    }
+
 }

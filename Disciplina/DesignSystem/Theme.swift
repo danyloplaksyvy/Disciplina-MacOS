@@ -22,6 +22,7 @@ extension SessionEndReason {
         case .deleted: "Deleted"
         case .systemSleep: "System sleep"
         case .appQuit: "App quit"
+        case .manuallyAdded: "Manually added"
         case .interrupted: "Interrupted"
         }
     }

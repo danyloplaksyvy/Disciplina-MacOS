@@ -6,10 +6,10 @@ struct BackupDocument: Codable {
     var tasks: [TodoItem]
     var sessions: [WorkSession]
     init(snapshot: TaskSnapshot, date: Date = Date()) {
-        formatVersion = 1; exportedAt = date; tasks = snapshot.tasks; sessions = snapshot.sessions
+        formatVersion = 2; exportedAt = date; tasks = snapshot.tasks; sessions = snapshot.sessions
     }
     @MainActor func validatedSnapshot() throws -> TaskSnapshot {
-        guard formatVersion == 1 else { throw DataError.unsupportedVersion }
+        guard (1...2).contains(formatVersion) else { throw DataError.unsupportedVersion }
         let snapshot = TaskSnapshot(tasks: tasks, sessions: sessions)
         try snapshot.validate()
         return snapshot

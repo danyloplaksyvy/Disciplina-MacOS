@@ -5,10 +5,11 @@ import Observation
 @MainActor @Observable
 final class PopoverMetrics {
     var maximumHeight: CGFloat = 600
+    var focusToken = 0
 }
 
 @MainActor
-final class MenuBarCoordinator: NSObject {
+final class MenuBarCoordinator: NSObject, NSPopoverDelegate {
     private let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     private let popover = NSPopover()
     private let metrics = PopoverMetrics()
@@ -18,11 +19,12 @@ final class MenuBarCoordinator: NSObject {
         self.store = dependencies.store
         super.init()
         popover.behavior = .transient
+        popover.delegate = self
         if let store {
-            popover.contentViewController = NSHostingController(rootView: MenuBarTaskView(store: store, metrics: metrics,
+            popover.contentViewController = PopoverHostingController(rootView: MenuBarTaskView(store: store, metrics: metrics,
                 openMain: { [weak self] in self?.close(); openMain() }, openSettings: { [weak self] in self?.close(); openSettings() }))
         } else {
-            popover.contentViewController = NSHostingController(rootView: StartupFailureView(dependencies: dependencies).frame(width: 380))
+            popover.contentViewController = PopoverHostingController(rootView: StartupFailureView(dependencies: dependencies).frame(width: 380))
         }
         item.button?.target = self; item.button?.action = #selector(toggle)
         item.button?.image = NSImage(systemSymbolName: "checkmark.circle", accessibilityDescription: nil)
@@ -69,8 +71,32 @@ final class MenuBarCoordinator: NSObject {
         guard let button = item.button else { return }
         metrics.maximumHeight = min(600, (button.window?.screen?.visibleFrame.height ?? 800) - 32)
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-        popover.contentViewController?.view.window?.makeKey()
+    }
+    func popoverWillShow(_ notification: Notification) {
+        configurePopoverWindow(popover.contentViewController?.view.window)
+    }
+    func popoverDidShow(_ notification: Notification) {
+        guard let window = popover.contentViewController?.view.window else { return }
+        configurePopoverWindow(window)
+        window.orderFrontRegardless()
+        window.makeKey()
+        metrics.focusToken += 1
     }
     func close() { popover.performClose(nil) }
     func invalidate() { close(); NSStatusBar.system.removeStatusItem(item) }
+}
+
+/// Configure only the popover's window; never activate or order the task window.
+@MainActor private func configurePopoverWindow(_ window: NSWindow?) {
+    guard let window else { return }
+    window.level = .floating
+    window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .canJoinAllApplications]
+    window.hidesOnDeactivate = false
+}
+
+@MainActor private final class PopoverHostingController<Content: View>: NSHostingController<Content> {
+    override func viewWillAppear() {
+        super.viewWillAppear()
+        configurePopoverWindow(view.window)
+    }
 }
