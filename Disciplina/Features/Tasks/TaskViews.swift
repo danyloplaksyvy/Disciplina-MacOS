@@ -16,10 +16,11 @@ struct StoreErrorView: View {
 struct TaskInputView: View {
     let store: TaskStore
     let focusToken: Int
+    var cancel: () -> Void = {}
     @State private var title = ""
     var body: some View {
         HStack {
-            CaptureTextField(text: $title, focusToken: focusToken, submit: add).frame(height: 26)
+            CaptureTextField(text: $title, focusToken: focusToken, submit: add, cancel: cancel).frame(height: 26)
             Button(action: add) { Image(systemName: "plus") }
                 .help("Add task").accessibilityLabel("Add task")
                 .disabled(title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || store.unavailable)
@@ -242,12 +243,13 @@ struct MenuBarTaskView: View {
     let metrics: PopoverMetrics
     let openMain: () -> Void
     let openSettings: () -> Void
+    let close: () -> Void
     private var maximumHeight: CGFloat { metrics.maximumHeight }
     var body: some View {
         QuickActionsLayout(maximumHeight: maximumHeight - 32,
                            desiredListHeight: min(CGFloat(store.relevant.count) * 70, 260)) {
             VStack(alignment: .leading, spacing: 12) {
-                TaskInputView(store: store, focusToken: metrics.focusToken)
+                TaskInputView(store: store, focusToken: metrics.focusToken, cancel: close)
                 StoreErrorView(store: store)
                 if let item = store.featured {
                     VStack(alignment: .leading, spacing: 6) {
@@ -280,6 +282,7 @@ struct MenuBarTaskView: View {
                 }
             }.fixedSize(horizontal: false, vertical: true)
         }.padding(16).frame(width: 380).tint(Theme.accent)
+            .onExitCommand(perform: close)
 
     }
 }

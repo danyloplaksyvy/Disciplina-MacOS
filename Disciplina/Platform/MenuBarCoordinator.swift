@@ -22,7 +22,7 @@ final class MenuBarCoordinator: NSObject, NSPopoverDelegate {
         popover.delegate = self
         if let store {
             popover.contentViewController = PopoverHostingController(rootView: MenuBarTaskView(store: store, metrics: metrics,
-                openMain: { [weak self] in self?.close(); openMain() }, openSettings: { [weak self] in self?.close(); openSettings() }))
+                openMain: { [weak self] in self?.close(); openMain() }, openSettings: { [weak self] in self?.close(); openSettings() }, close: { [weak self] in self?.close() }))
         } else {
             popover.contentViewController = PopoverHostingController(rootView: StartupFailureView(dependencies: dependencies).frame(width: 380))
         }

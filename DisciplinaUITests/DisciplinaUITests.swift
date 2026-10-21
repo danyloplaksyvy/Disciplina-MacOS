@@ -248,7 +248,9 @@ final class DisciplinaUITests: XCTestCase {
         app.typeText("Popover focused without clicking\n")
         let popoverList = app.descendants(matching: .any)["popover-task-list"].firstMatch
         XCTAssertTrue(popoverList.staticTexts["Popover focused without clicking"].waitForExistence(timeout: 3))
-        app.statusItems.firstMatch.click()
+        app.typeKey(.escape, modifierFlags: [])
+        let dismissed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: app.buttons["Open Disciplina"])
+        XCTAssertEqual(XCTWaiter.wait(for: [dismissed], timeout: 3), .completed)
     }
 
     func testPopoverAboveFullScreenTaskWindow() {
