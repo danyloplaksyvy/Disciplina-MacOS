@@ -159,6 +159,21 @@ struct RecurrenceTests {
         #expect(!store.unavailable && repo.series[0].pendingTaskID == reserved && repo.items.count == 1)
     }
 
+    @Test func deletionReceiptSurvivesPostCommitRefreshFailure() throws {
+        let (repo, item) = fixture()
+        let timer = TimerCoordinator(repository: repo, sample: { TimeSample(awake: 0, continuous: 0, date: item.createdAt) })
+        let store = TaskStore(service: TaskService(repository: repo), timer: timer)
+        #expect(store.setRepeat(item.id, weekdays: Array(1...7)))
+        let series = repo.series[0]
+        repo.failFetchAfterWrite = true
+        #expect(store.delete(id: item.id, disposition: .stop))
+        #expect(store.unavailable && !repo.series[0].enabled)
+        repo.failFetchAfterWrite = false; repo.failFetch = false
+        store.reload(); store.undoDelete()
+        #expect(repo.items[0].deletedAt == nil && repo.items[0].seriesID == series.id)
+        #expect(repo.series[0] == series)
+    }
+
     @Test func dayGroupingDSTMidnightTimezoneAndYear() throws {
         let now = date("2026-10-25T23:30:00Z") // DST has ended; Monday local midnight passed
         let yesterday = date("2026-10-25T00:30:00Z")

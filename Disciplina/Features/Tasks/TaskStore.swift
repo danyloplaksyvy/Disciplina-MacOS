@@ -103,12 +103,7 @@ final class TaskStore {
     @discardableResult func delete(id: UUID, disposition: RecurringDeletion = .stop) -> Bool {
         var ticket: (RecurrenceSeries, UUID)?
         let saved = mutate {
-            let before = try service.repository.snapshot().series.first { $0.currentTaskID == id }
-            try timer.delete(id: id, disposition: disposition)
-            // The revision is captured from the committed state, before publishing UI snapshots.
-            if let before, let after = try? service.repository.snapshot().series.first(where: { $0.id == before.id }) {
-                ticket = (before, after.revision)
-            }
+            ticket = try timer.delete(id: id, disposition: disposition)
         }
         if let ticket { deletionSeries[id] = ticket }
         if saved { deletedIDs.append(id); notice = "Task moved to Recently Deleted." }

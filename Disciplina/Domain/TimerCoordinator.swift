@@ -177,11 +177,13 @@ final class TimerCoordinator {
         }
     }
 
-    func delete(id: UUID, disposition: RecurringDeletion = .stop) throws {
+    @discardableResult func delete(id: UUID, disposition: RecurringDeletion = .stop) throws -> (before: RecurrenceSeries, after: UUID)? {
         guard failure == nil else { throw DataError.timerUnavailable }
         var state = try repository.snapshot()
         guard let index = state.tasks.firstIndex(where: { $0.id == id && $0.deletedAt == nil }) else { throw TaskError.notFound }
+        var receipt: (before: RecurrenceSeries, after: UUID)?
         let change: (inout TaskSnapshot, TimeSample) throws -> UUID? = { state, now in
+            let previous = state.series.first { $0.currentTaskID == id }
             if let seriesID = state.tasks[index].seriesID,
                let s = state.series.firstIndex(where: { $0.id == seriesID && $0.enabled && $0.currentTaskID == id }),
                !state.tasks[index].isCompleted {
@@ -190,10 +192,14 @@ final class TimerCoordinator {
                 } else { state.stopSeries(at: s, revision: self.makeID()) }
             }
             state.tasks[index].deletedAt = now.date; state.tasks[index].updatedAt = now.date
+            if let previous, let after = state.series.first(where: { $0.id == previous.id }) {
+                receipt = (previous, after.revision)
+            }
             return nil
         }
         if running?.taskID == id { try transition(reason: .deleted, change: change) }
         else { _ = try change(&state, sample()); try repository.commit(state) }
+        return receipt
     }
 
     func setRepeat(taskID: UUID, weekdays: [Int]) throws {
