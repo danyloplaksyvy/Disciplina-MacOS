@@ -7,6 +7,11 @@ final class TaskStore {
     private var structure: [[UUID]] { [inProgress.map(\.id), todo.map(\.id), completed.map(\.id)] }
     let service: TaskService
     let timer: TimerCoordinator
+    private(set) var series: [RecurrenceSeries] = []
+    private var deletionSeries: [UUID: (before: RecurrenceSeries, after: UUID)] = [:]
+    private(set) var dayGroups: [TaskDayGroup] = []
+    private var groupingDate = Date()
+    private var groupingCalendar = LocalDay.calendar()
     private(set) var sessions: [WorkSession] = []
     private(set) var deleted: [TodoItem] = []
     private(set) var deletedIDs: [UUID] = []
@@ -46,6 +51,7 @@ final class TaskStore {
         items = snapshot.tasks.filter { $0.deletedAt == nil }
         deleted = snapshot.tasks.filter { $0.deletedAt != nil }
         sessions = snapshot.sessions
+        series = snapshot.series
         active = items.filter { !$0.isCompleted }.sorted {
             $0.createdAt == $1.createdAt ? $0.id.uuidString < $1.id.uuidString : $0.createdAt > $1.createdAt
         }
@@ -55,6 +61,7 @@ final class TaskStore {
         inProgress = items.filter { $0.status == .inProgress }.sorted(by: recentlyUpdated)
         todo = active.filter { $0.status == .todo }
         relevantCandidates = inProgress + todo.sorted(by: recentlyUpdated)
+        rebuildDays()
         totals = [:]
         for session in sessions { totals[session.taskID, default: 0] += session.accumulatedMilliseconds }
     }
@@ -91,8 +98,17 @@ final class TaskStore {
     @discardableResult func setCompleted(id: UUID, isCompleted: Bool) -> Bool {
         mutate { try timer.setStatus(id: id, status: isCompleted ? .completed : .todo) }
     }
-    @discardableResult func delete(id: UUID) -> Bool {
-        let saved = mutate { try timer.delete(id: id) }
+    @discardableResult func delete(id: UUID, disposition: RecurringDeletion = .stop) -> Bool {
+        var ticket: (RecurrenceSeries, UUID)?
+        let saved = mutate {
+            let before = try service.repository.snapshot().series.first { $0.currentTaskID == id }
+            try timer.delete(id: id, disposition: disposition)
+            // The revision is captured from the committed state, before publishing UI snapshots.
+            if let before, let after = try? service.repository.snapshot().series.first(where: { $0.id == before.id }) {
+                ticket = (before, after.revision)
+            }
+        }
+        if let ticket { deletionSeries[id] = ticket }
         if saved { deletedIDs.append(id); notice = "Task moved to Recently Deleted." }
         return saved
     }
@@ -112,19 +128,27 @@ final class TaskStore {
         return result
     }
     @discardableResult func setStatus(_ id: UUID, _ status: TaskStatus) -> Bool { mutate { try timer.setStatus(id: id, status: status) } }
-    @discardableResult func restore(_ id: UUID) -> Bool {
+    @discardableResult func restore(_ id: UUID, undo: Bool = false) -> Bool {
+        var independent = false
         let result = mutate {
             var snapshot = try service.repository.snapshot()
             guard let index = snapshot.tasks.firstIndex(where: { $0.id == id }) else { throw TaskError.notFound }
             guard snapshot.tasks[index].deletedAt != nil else { return }
+            if undo, let ticket = deletionSeries[id],
+               let s = snapshot.series.firstIndex(where: { $0.id == ticket.before.id && $0.revision == ticket.after }) {
+                snapshot.series[s] = ticket.before
+            } else {
+                independent = snapshot.tasks[index].seriesID != nil
+                snapshot.detachTask(at: index)
+            }
             snapshot.tasks[index].deletedAt = nil
             snapshot.tasks[index].updatedAt = Date()
             try service.repository.commit(snapshot)
         }
-        if result { deletedIDs.removeAll { $0 == id }; notice = "Task restored." }
+        if result { deletedIDs.removeAll { $0 == id }; deletionSeries[id] = nil; notice = independent ? "Task restored independently; recurrence was left unchanged." : "Task restored." }
         return result
     }
-    func undoDelete() { if let id = deletedIDs.last { _ = restore(id) } }
+    func undoDelete() { if let id = deletedIDs.last { _ = restore(id, undo: true) } }
     @discardableResult func permanentlyDelete(_ id: UUID) -> Bool {
         guard deleted.contains(where: { $0.id == id }) else { return false }
         let result = mutate { try service.repository.delete(id: id) }
@@ -144,6 +168,24 @@ final class TaskStore {
     }
     @discardableResult func deleteSession(taskID: UUID, sessionID: UUID) -> Bool {
         mutate { try timer.deleteSession(taskID: taskID, sessionID: sessionID) }
+    }
+
+    func currentSeries(for item: TodoItem) -> RecurrenceSeries? {
+        series.first { $0.id == item.seriesID && $0.enabled && $0.currentTaskID == item.id }
+    }
+    @discardableResult func setRepeat(_ id: UUID, weekdays: [Int]) -> Bool {
+        mutate { try timer.setRepeat(taskID: id, weekdays: weekdays) }
+    }
+    @discardableResult func changeSeries(_ id: UUID, weekdays: [Int]?) -> Bool {
+        mutate { try timer.changeSeries(id: id, weekdays: weekdays) }
+    }
+    func calendarChanged(now: Date = Date(), calendar: Calendar = LocalDay.calendar()) {
+        groupingDate = now; groupingCalendar = calendar; rebuildDays()
+        if !unavailable { _ = mutate { try timer.reconcileRecurrence() } }
+    }
+    private func rebuildDays() {
+        dayGroups = TaskDayGroup.make(inProgress: inProgress, todo: todo, completed: completed,
+                                     now: groupingDate, calendar: groupingCalendar)
     }
 
     func dismissError() { if !needsRefresh { errorMessage = nil } }

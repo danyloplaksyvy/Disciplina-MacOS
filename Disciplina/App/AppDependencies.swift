@@ -15,6 +15,8 @@ final class AppDependencies {
     private var hotkeys: HotkeyService?
     private var menuBar: MenuBarCoordinator?
     private var ticker: Task<Void, Never>?
+    private var dayTimer: Timer?
+    private var calendarObservers: [(NotificationCenter, NSObjectProtocol)] = []
     private var sleepObserver: NSObjectProtocol?
     private var openMain: (() -> Void)?
     private var openSettings: (() -> Void)?
@@ -37,10 +39,19 @@ final class AppDependencies {
                 exit(EXIT_FAILURE)
             }
         }
+        AppCoordinator.startServices = { [weak self] in self?.startServices() }
+    }
+    func startServices() {
         load()
+        ensureMenu()
+        if hotkeys == nil && (!testingMode || ProcessInfo.processInfo.arguments.contains("--enable-test-shortcut")) {
+            hotkeys = HotkeyService { [weak self] in self?.showCapture() }
+        }
     }
     func load() {
         guard store == nil else { return }
+        defer { if menuBar != nil { updateMenuContent() } }
+
         do {
             let testing = ProcessInfo.processInfo.arguments.contains("--ui-testing")
                 || ProcessInfo.processInfo.environment["DISCIPLINA_TESTING"] == "1"
@@ -89,7 +100,9 @@ final class AppDependencies {
             if store.unavailable { store.reload(); if store.unavailable { return false } }
             return store.pause(.appQuit)
         }
-        if let openMain, let openSettings { configureMenu(openMain: openMain, openSettings: openSettings) }
+        observeCalendar()
+        store.calendarChanged()
+        if menuBar != nil { updateMenuContent() }
     }
     private func observeAnnouncements(_ store: TaskStore) {
         withObservationTracking {
@@ -109,11 +122,46 @@ final class AppDependencies {
 
     func configureMenu(openMain: @escaping () -> Void, openSettings: @escaping () -> Void) {
         self.openMain = openMain; self.openSettings = openSettings
-        menuBar?.invalidate()
-        menuBar = nil
-        menuBar = MenuBarCoordinator(dependencies: self, openMain: openMain, openSettings: openSettings)
     }
-    func showCapture() { menuBar?.close(); capture?.show() }
+    private func ensureMenu() {
+        guard menuBar == nil else { return }
+        menuBar = MenuBarCoordinator(dependencies: self,
+            openMain: { [weak self] in self?.openMain?() }, openSettings: { [weak self] in self?.openSettings?() })
+    }
+    private func updateMenuContent() {
+        menuBar?.setContent(dependencies: self,
+            openMain: { [weak self] in self?.openMain?() }, openSettings: { [weak self] in self?.openSettings?() })
+    }
+    func showCapture() {
+        menuBar?.close()
+        if let capture { capture.show() } else { openMain?() }
+    }
+    private func observeCalendar() {
+        for (center, observer) in calendarObservers { center.removeObserver(observer) }
+        calendarObservers = []
+        let events: [(NotificationCenter, Notification.Name)] = [
+            (.default, NSApplication.didBecomeActiveNotification),
+            (.default, .NSSystemTimeZoneDidChange),
+            (.default, .NSSystemClockDidChange),
+            (NSWorkspace.shared.notificationCenter, NSWorkspace.didWakeNotification)]
+        for (center, name) in events {
+            let observer = center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.calendarEvent() }
+            }
+            calendarObservers.append((center, observer))
+        }
+        scheduleMidnight()
+    }
+    private func calendarEvent() { store?.calendarChanged(); scheduleMidnight() }
+    private func scheduleMidnight() {
+        dayTimer?.invalidate()
+        let calendar = LocalDay.calendar()
+        guard let next = calendar.dateInterval(of: .day, for: Date())?.end else { return }
+        dayTimer = Timer(fire: next, interval: 0, repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated { self?.calendarEvent() }
+        }
+        if let dayTimer { RunLoop.main.add(dayTimer, forMode: .common) }
+    }
     func showBackups() {
         if let root = location?.root { NSWorkspace.shared.open(root) }
     }

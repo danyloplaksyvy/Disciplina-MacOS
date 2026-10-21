@@ -41,6 +41,49 @@ final class DisciplinaUITests: XCTestCase {
         add(attachment)
     }
 
+    func testLoginLaunchHasStatusItemWithoutMainWindow() {
+        app.terminate()
+        app.launchArguments = ["--ui-testing", "--simulate-login-launch"]
+        app.launch()
+        expectMenuBarStatus("Disciplina: All clear")
+        XCTAssertFalse(app.windows["main"].isHittable)
+        XCTAssertEqual(app.statusItems.count, 1)
+        app.statusItems.firstMatch.click()
+        let field = app.textFields["new-task"]
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        app.typeText("Login capture\n")
+        XCTAssertTrue(app.staticTexts["Login capture"].waitForExistence(timeout: 5))
+        app.buttons["Open Disciplina"].click()
+        XCTAssertTrue(app.windows["main"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.statusItems.count, 1)
+    }
+
+    func testDayCollapseAndRecurringTaskEditor() {
+        add("Recurring practice")
+        let list = app.outlines["main-task-list"]
+        list.staticTexts["Recurring practice"].click()
+        app.buttons["Repeat…"].click()
+        let sheet = app.sheets.firstMatch
+        XCTAssertTrue(sheet.waitForExistence(timeout: 5))
+        sheet.popUpButtons.firstMatch.click()
+        app.menuItems["Every day"].click()
+        sheet.buttons["Save"].click()
+        XCTAssertTrue(app.staticTexts["Current occurrence"].waitForExistence(timeout: 5))
+        app.buttons["Close details"].click()
+        list.buttons["Collapse Today"].click()
+        XCTAssertFalse(list.staticTexts["Recurring practice"].exists)
+        list.buttons["Expand Today"].click()
+        XCTAssertTrue(list.staticTexts["Recurring practice"].exists)
+        list.buttons["Complete Recurring practice"].click()
+        XCTAssertTrue(list.buttons["Reopen Recurring practice"].waitForExistence(timeout: 5))
+        expectMenuBarStatus("Disciplina: All clear")
+        list.buttons["Reopen Recurring practice"].click()
+        expectMenuBarStatus("Disciplina: 1 active task")
+        list.staticTexts["Recurring practice"].click()
+        let attachment = XCTAttachment(screenshot: app.windows["main"].screenshot())
+        attachment.name = "selected-recurring-row"; attachment.lifetime = .keepAlways; add(attachment)
+    }
+
     func testCreateEditCompleteReopenDelete() {
         expectMenuBarStatus("Disciplina: All clear")
         attachMenuBarScreenshot("menu-bar-all-clear")

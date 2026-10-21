@@ -13,24 +13,30 @@ final class MenuBarCoordinator: NSObject, NSPopoverDelegate {
     private let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     private let popover = NSPopover()
     private let metrics = PopoverMetrics()
-    private let store: TaskStore?
+    private var store: TaskStore?
     private var appearanceObserver: NSKeyValueObservation?
     init(dependencies: AppDependencies, openMain: @escaping () -> Void, openSettings: @escaping () -> Void) {
         self.store = dependencies.store
         super.init()
         popover.behavior = .transient
         popover.delegate = self
-        if let store {
-            popover.contentViewController = PopoverHostingController(rootView: MenuBarTaskView(store: store, metrics: metrics,
-                openMain: { [weak self] in self?.close(); openMain() }, openSettings: { [weak self] in self?.close(); openSettings() }, close: { [weak self] in self?.close() }))
-        } else {
-            popover.contentViewController = PopoverHostingController(rootView: StartupFailureView(dependencies: dependencies).frame(width: 380))
-        }
+        setContent(dependencies: dependencies, openMain: openMain, openSettings: openSettings)
         item.button?.target = self; item.button?.action = #selector(toggle)
         item.button?.image = NSImage(systemSymbolName: "checkmark.circle", accessibilityDescription: nil)
         item.button?.imagePosition = .imageRight
         appearanceObserver = item.button?.observe(\.effectiveAppearance, options: [.new]) { [weak self] _, _ in
             Task { @MainActor in self?.update() }
+        }
+        observe()
+    }
+    func setContent(dependencies: AppDependencies, openMain: @escaping () -> Void, openSettings: @escaping () -> Void) {
+        close()
+        store = dependencies.store
+        if let store {
+            popover.contentViewController = PopoverHostingController(rootView: MenuBarTaskView(store: store, metrics: metrics,
+                openMain: { [weak self] in self?.close(); openMain() }, openSettings: { [weak self] in self?.close(); openSettings() }, close: { [weak self] in self?.close() }))
+        } else {
+            popover.contentViewController = PopoverHostingController(rootView: StartupFailureView(dependencies: dependencies).frame(width: 380))
         }
         observe()
     }

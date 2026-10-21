@@ -47,7 +47,7 @@ final class StoreLocation {
     func publish(_ url: URL) throws {
         let directory = url.deletingLastPathComponent().lastPathComponent
         guard UUID(uuidString: directory) != nil else { throw DataError.invalidSnapshot }
-        try JSONEncoder().encode(Manifest(directory: directory, schemaVersion: 3)).write(to: manifest, options: .atomic)
+        try JSONEncoder().encode(Manifest(directory: directory, schemaVersion: 4)).write(to: manifest, options: .atomic)
     }
     func newURL() throws -> URL {
         let directory = root.appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -67,16 +67,16 @@ final class StoreLocation {
             guard UUID(uuidString: value.directory) != nil else { throw DataError.invalidSnapshot }
             let url = root.appendingPathComponent(value.directory).appendingPathComponent("default.store")
             guard FileManager.default.fileExists(atPath: url.path) else { throw CocoaError(.fileNoSuchFile) }
-            if value.schemaVersion == 3 {
+            if value.schemaVersion == 4 {
                 let persistence = try PersistenceController(url: url)
                 try SwiftDataTaskRepository(context: persistence.container.mainContext).snapshot().validate()
                 return persistence
             }
-            guard value.schemaVersion == nil || value.schemaVersion == 2 else { throw DataError.unsupportedVersion }
+            guard value.schemaVersion == nil || value.schemaVersion == 2 || value.schemaVersion == 3 else { throw DataError.unsupportedVersion }
             let backup = try backup(url)
             let inspection = try newURL()
             try DatabaseBackup.copy(from: backup, to: inspection)
-            let expected = try readV2(inspection)
+            let expected = try value.schemaVersion == 3 ? readV3(inspection) : readV2(inspection)
             let target = try newURL()
             try DatabaseBackup.copy(from: backup, to: target)
             let persistence = try PersistenceController(url: target)
@@ -120,7 +120,8 @@ final class StoreLocation {
         try repository.commit(normalized)
         let saved = try repository.snapshot()
         try saved.validate()
-        guard saved.tasks.sorted(by: { $0.id.uuidString < $1.id.uuidString }) == normalized.tasks.sorted(by: { $0.id.uuidString < $1.id.uuidString }),
+        guard saved.series.sorted(by: { $0.id.uuidString < $1.id.uuidString }) == normalized.series.sorted(by: { $0.id.uuidString < $1.id.uuidString }),
+              saved.tasks.sorted(by: { $0.id.uuidString < $1.id.uuidString }) == normalized.tasks.sorted(by: { $0.id.uuidString < $1.id.uuidString }),
               saved.sessions.sorted(by: { $0.id.uuidString < $1.id.uuidString }) == normalized.sessions.sorted(by: { $0.id.uuidString < $1.id.uuidString }) else { throw DataError.invalidSnapshot }
         try beforePublish()
         try publish(url)
@@ -129,7 +130,8 @@ final class StoreLocation {
 
     private func verify(_ actual: TaskSnapshot, matches expected: TaskSnapshot) throws {
         try actual.validate()
-        guard actual.tasks.sorted(by: { $0.id.uuidString < $1.id.uuidString }) == expected.tasks.sorted(by: { $0.id.uuidString < $1.id.uuidString }),
+        guard actual.series == expected.series,
+              actual.tasks.sorted(by: { $0.id.uuidString < $1.id.uuidString }) == expected.tasks.sorted(by: { $0.id.uuidString < $1.id.uuidString }),
               actual.sessions.sorted(by: { $0.id.uuidString < $1.id.uuidString }) == expected.sessions.sorted(by: { $0.id.uuidString < $1.id.uuidString }) else { throw DataError.invalidSnapshot }
     }
     private func readV2(_ url: URL) throws -> TaskSnapshot {
@@ -139,6 +141,20 @@ final class StoreLocation {
         let tasks = try container.mainContext.fetch(FetchDescriptor<TaskSchemaV2.TaskRecord>())
         let sessions = try container.mainContext.fetch(FetchDescriptor<TaskSchemaV2.SessionRecord>())
         guard tasks.allSatisfy({ TaskStatus(rawValue: $0.statusRaw) != nil }),
+              sessions.allSatisfy({ $0.endReasonRaw == nil || SessionEndReason(rawValue: $0.endReasonRaw!) != nil }) else { throw DataError.invalidSnapshot }
+        let state = TaskSnapshot(tasks: tasks.map(\.item), sessions: sessions.map(\.item))
+        try state.validate()
+        return state
+    }
+
+    private func readV3(_ url: URL) throws -> TaskSnapshot {
+        let schema = Schema(versionedSchema: TaskSchemaV3.self)
+        let configuration = ModelConfiguration(schema: schema, url: url, cloudKitDatabase: .none)
+        let container = try ModelContainer(for: schema, configurations: [configuration])
+        let tasks = try container.mainContext.fetch(FetchDescriptor<TaskSchemaV3.TaskRecord>())
+        let sessions = try container.mainContext.fetch(FetchDescriptor<TaskSchemaV3.SessionRecord>())
+        guard sessions.allSatisfy({ SessionOrigin(rawValue: $0.originRaw) != nil }),
+              tasks.allSatisfy({ TaskStatus(rawValue: $0.statusRaw) != nil }),
               sessions.allSatisfy({ $0.endReasonRaw == nil || SessionEndReason(rawValue: $0.endReasonRaw!) != nil }) else { throw DataError.invalidSnapshot }
         let state = TaskSnapshot(tasks: tasks.map(\.item), sessions: sessions.map(\.item))
         try state.validate()

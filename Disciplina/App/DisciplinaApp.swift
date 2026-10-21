@@ -8,6 +8,7 @@ struct DisciplinaApp: App {
     @Environment(\.openWindow) private var openWindow
 
     var body: some Scene {
+        let _ = dependencies.configureMenu(openMain: showMain, openSettings: { openSettings(); WindowCoordinator.activate() })
         Window("Disciplina", id: "main") {
             Group {
             if let store = dependencies.store {
@@ -17,8 +18,9 @@ struct DisciplinaApp: App {
             } else {
                 StartupFailureView(dependencies: dependencies)
             }
-            }.onAppear { dependencies.configureMenu(openMain: showMain, openSettings: { openSettings(); WindowCoordinator.activate() }) }
+            }
         }
+        .loginLaunchBehavior()
         .defaultSize(width: 860, height: 600)
         .commands {
             CommandGroup(replacing: .undoRedo) {
@@ -68,5 +70,13 @@ struct StartupFailureView: View {
                 Button("Cancel", role: .cancel) { dependencies.pendingRestore = nil }
                 Button("Restore", role: .destructive) { dependencies.restoreData() }
             } message: { Text("The validated backup will replace local data. Existing store files remain available for recovery.") }
+    }
+}
+
+private extension Scene {
+    @SceneBuilder func loginLaunchBehavior() -> some Scene {
+        if #available(macOS 15, *) {
+            self.defaultLaunchBehavior(AppCoordinator.launchedAtLogin ? .suppressed : .automatic)
+        } else { self }
     }
 }

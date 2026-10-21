@@ -26,6 +26,7 @@ final class TimerCoordinator {
     private let repository: any TaskRepository
     private let sample: () -> TimeSample
     private let makeID: () -> UUID
+    private let calendar: () -> Calendar
     private var trusted: TimeSample?
     private(set) var running: WorkSession?
     private(set) var elapsedMilliseconds: Int64 = 0
@@ -34,11 +35,12 @@ final class TimerCoordinator {
     var watchdogSeconds: Double = 15
 
     init(repository: any TaskRepository, sample: (() -> TimeSample)? = nil,
-         makeID: @escaping () -> UUID = UUID.init) {
+         makeID: @escaping () -> UUID = UUID.init, calendar: @escaping () -> Calendar = { LocalDay.calendar() }) {
         self.repository = repository
         let source = TimeSource()
         self.sample = sample ?? { source.sample() }
         self.makeID = makeID
+        self.calendar = calendar
     }
 
     func recover() throws {
@@ -161,6 +163,7 @@ final class TimerCoordinator {
         guard let index = state.tasks.firstIndex(where: { $0.id == id && $0.deletedAt == nil }) else { throw TaskError.notFound }
         guard state.tasks[index].status != status else { return }
         let change: (inout TaskSnapshot, TimeSample) throws -> UUID? = { state, now in
+            try state.recurrenceStatusChanged(taskIndex: index, status: status, now: now.date, calendar: self.calendar(), makeID: self.makeID)
             state.tasks[index].status = status
             state.tasks[index].completedAt = status == .completed ? now.date : nil
             state.tasks[index].updatedAt = now.date
@@ -173,19 +176,64 @@ final class TimerCoordinator {
         }
     }
 
-    func delete(id: UUID) throws {
+    func delete(id: UUID, disposition: RecurringDeletion = .stop) throws {
         var state = try repository.snapshot()
         guard let index = state.tasks.firstIndex(where: { $0.id == id && $0.deletedAt == nil }) else { throw TaskError.notFound }
-        if running?.taskID == id {
-            try transition(reason: .deleted) { state, now in
-                state.tasks[index].deletedAt = now.date; state.tasks[index].updatedAt = now.date
-                return nil
+        let change: (inout TaskSnapshot, TimeSample) throws -> UUID? = { state, now in
+            if let seriesID = state.tasks[index].seriesID,
+               let s = state.series.firstIndex(where: { $0.id == seriesID && $0.enabled && $0.currentTaskID == id }),
+               !state.tasks[index].isCompleted {
+                if disposition == .skip {
+                    try state.schedule(seriesIndex: s, after: LocalDay(now.date, calendar: self.calendar()), calendar: self.calendar(), makeID: self.makeID)
+                } else { state.stopSeries(at: s, revision: self.makeID()) }
             }
-        } else {
-            state.tasks[index].deletedAt = sample().date
-            try repository.commit(state)
+            state.tasks[index].deletedAt = now.date; state.tasks[index].updatedAt = now.date
+            return nil
+        }
+        if running?.taskID == id { try transition(reason: .deleted, change: change) }
+        else { _ = try change(&state, sample()); try repository.commit(state) }
+    }
+
+    func setRepeat(taskID: UUID, weekdays: [Int]) throws {
+        guard failure == nil else { throw DataError.timerUnavailable }
+        var state = try repository.snapshot()
+        guard let t = state.tasks.firstIndex(where: { $0.id == taskID && !$0.isCompleted && $0.deletedAt == nil }) else { throw TaskError.notFound }
+        if let id = state.tasks[t].seriesID,
+           let s = state.series.firstIndex(where: { $0.id == id && $0.currentTaskID == taskID && $0.enabled }) {
+            if weekdays.isEmpty { state.stopSeries(at: s, revision: makeID()) }
+            else { state.series[s].weekdays = weekdays.sorted(); state.series[s].revision = makeID() }
+        } else if !weekdays.isEmpty {
+            state.detachTask(at: t)
+            let id = makeID()
+            state.tasks[t].seriesID = id
+            state.series.append(RecurrenceSeries(id: id, title: state.tasks[t].title, weekdays: weekdays.sorted(), currentTaskID: taskID, revision: makeID()))
+        }
+        state.tasks[t].updatedAt = sample().date
+        try state.validate(); try repository.commit(state)
+    }
+
+    func changeSeries(id: UUID, weekdays: [Int]?) throws {
+        guard failure == nil else { throw DataError.timerUnavailable }
+        var state = try repository.snapshot()
+        guard let s = state.series.firstIndex(where: { $0.id == id && $0.enabled }) else { throw TaskError.notFound }
+        if let weekdays {
+            state.series[s].weekdays = weekdays.sorted(); state.series[s].revision = makeID()
+            if state.series[s].pendingTaskID != nil, let trigger = state.series[s].lastTriggerDay {
+                state.series[s].pendingDay = try trigger.next(weekdays: weekdays, calendar: calendar())
+                _ = state.materializeDue(now: sample().date, calendar: calendar(), makeID: makeID)
+            }
+        } else { state.stopSeries(at: s, revision: makeID()) }
+        try state.validate(); try repository.commit(state)
+    }
+
+    func reconcileRecurrence() throws {
+        guard failure == nil else { throw DataError.timerUnavailable }
+        var state = try repository.snapshot()
+        if state.materializeDue(now: sample().date, calendar: calendar(), makeID: makeID) {
+            try state.validate(); try repository.commit(state)
         }
     }
+
     private func changeSessions(taskID: UUID, change: (inout TaskSnapshot, Date) throws -> Void) throws {
         guard failure == nil else { throw DataError.timerUnavailable }
         guard running?.taskID != taskID else { throw SessionEditError.running }

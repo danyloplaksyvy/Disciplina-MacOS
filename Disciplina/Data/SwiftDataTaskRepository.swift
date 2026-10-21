@@ -16,7 +16,9 @@ final class SwiftDataTaskRepository: TaskRepository {
               sessions.allSatisfy({ SessionOrigin(rawValue: $0.originRaw) != nil }),
               sessions.allSatisfy({ $0.endReasonRaw == nil || SessionEndReason(rawValue: $0.endReasonRaw!) != nil })
         else { throw DataError.invalidSnapshot }
-        return TaskSnapshot(tasks: tasks.map(\.item), sessions: sessions.map(\.item))
+        for task in tasks { if let data = task.scheduledDayData { _ = try JSONDecoder().decode(LocalDay.self, from: data) } }
+        let series = try context.fetch(FetchDescriptor<SeriesRecord>()).map { try $0.value() }
+        return TaskSnapshot(tasks: tasks.map(\.item), sessions: sessions.map(\.item), series: series)
     }
     func insert(_ item: TodoItem) throws {
         var state = try snapshot()
@@ -31,6 +33,7 @@ final class SwiftDataTaskRepository: TaskRepository {
     func delete(id: UUID) throws {
         var state = try snapshot()
         guard state.tasks.contains(where: { $0.id == id }) else { throw TaskError.notFound }
+        if let index = state.tasks.firstIndex(where: { $0.id == id }) { state.detachTask(at: index) }
         state.tasks.removeAll { $0.id == id }; state.sessions.removeAll { $0.taskID == id }
         try commit(state)
     }
@@ -51,6 +54,16 @@ final class SwiftDataTaskRepository: TaskRepository {
             for item in snapshot.sessions {
                 if let record = sessionMap[item.id] { if record.item != item { record.apply(item) } }
                 else { context.insert(SessionRecord(item)) }
+            }
+            let series = try context.fetch(FetchDescriptor<SeriesRecord>())
+            let seriesMap = Dictionary(uniqueKeysWithValues: series.map { ($0.id, $0) })
+            let seriesIDs = Set(snapshot.series.map(\.id))
+            for record in series where !seriesIDs.contains(record.id) { context.delete(record) }
+            for item in snapshot.series {
+                if let record = seriesMap[item.id] {
+                    let payload = try JSONEncoder().encode(item)
+                    if record.payload != payload { record.payload = payload }
+                } else { context.insert(try SeriesRecord(item)) }
             }
             try save(context)
         } catch { context.rollback(); throw error }

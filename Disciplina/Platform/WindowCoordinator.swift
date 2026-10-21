@@ -3,9 +3,10 @@ import AppKit
 @MainActor
 final class AppCoordinator: NSObject, NSApplicationDelegate {
     static var launchedAtLogin: Bool {
-        NSAppleEventManager.shared().currentAppleEvent?
+        ProcessInfo.processInfo.arguments.contains("--simulate-login-launch") || NSAppleEventManager.shared().currentAppleEvent?
             .paramDescriptor(forKeyword: keyAEPropData)?.enumCodeValue == keyAELaunchedAsLogInItem
     }
+    static var startServices: (() -> Void)?
     private var quietLaunch = false
     static var prepareToQuit: (() -> Bool)?
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
@@ -23,8 +24,8 @@ final class AppCoordinator: NSObject, NSApplicationDelegate {
         quietLaunch = Self.launchedAtLogin
     }
     func applicationDidFinishLaunching(_ notification: Notification) {
+        Self.startServices?()
         if quietLaunch {
-            NSApp.hide(nil)
             DispatchQueue.main.async {
                 NSApp.windows.filter { $0.identifier?.rawValue == "main" }.forEach { $0.close() }
             }
@@ -32,7 +33,8 @@ final class AppCoordinator: NSObject, NSApplicationDelegate {
     }
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        true // SwiftUI's unique Window scene handles Dock reopen.
+        quietLaunch = false
+        return true // SwiftUI's unique Window scene handles Dock reopen.
     }
 }
 

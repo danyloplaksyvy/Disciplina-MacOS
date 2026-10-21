@@ -32,11 +32,14 @@ final class TaskService {
 
     func rename(id: UUID, title: String) throws {
         let title = try Self.validatedTitle(title)
-        var item = try find(id)
-        guard item.title != title else { return }
-        item.title = title
-        item.updatedAt = now()
-        try repository.update(item)
+        var state = try repository.snapshot()
+        guard let index = state.tasks.firstIndex(where: { $0.id == id }) else { throw TaskError.notFound }
+        guard state.tasks[index].title != title else { return }
+        state.tasks[index].title = title; state.tasks[index].updatedAt = now()
+        if let seriesID = state.tasks[index].seriesID, let s = state.series.firstIndex(where: { $0.id == seriesID }) {
+            state.series[s].title = title; state.series[s].revision = makeID()
+        }
+        try repository.commit(state)
     }
 
     func setCompleted(id: UUID, isCompleted: Bool) throws {

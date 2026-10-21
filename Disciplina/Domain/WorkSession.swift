@@ -41,10 +41,13 @@ struct TaskSnapshot: Equatable, Codable, Sendable {
     var tasks: [TodoItem] = []
     var sessions: [WorkSession] = []
 
+    var series: [RecurrenceSeries] = []
+
     @MainActor func validate() throws {
         guard Set(tasks.map(\.id)).count == tasks.count,
               Set(sessions.map(\.id)).count == sessions.count,
               sessions.filter({ $0.endedAt == nil }).count <= 1 else { throw DataError.invalidSnapshot }
+        try validateRecurrence()
         let byID = Dictionary(uniqueKeysWithValues: tasks.map { ($0.id, $0) })
         var totals: [UUID: Int64] = [:]
         for task in tasks {

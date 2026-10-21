@@ -23,6 +23,7 @@ struct SettingsView: View {
                 }
                 if let error = login.errorMessage { Text(error).foregroundStyle(.red) }
             }
+            if let store = dependencies.store { RecurringTasksSettings(store: store) }
             Section("Data & Recovery") {
                 Button("Export Data…") { dependencies.exportData() }.disabled(dependencies.store == nil)
                 Button("Restore Data…") { dependencies.chooseRestore() }

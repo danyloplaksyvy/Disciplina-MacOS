@@ -50,6 +50,12 @@ struct TaskRowView: View {
     let item: TodoItem
     let store: TaskStore
     var compact = false
+    var selected = false
+    @Environment(\.controlActiveState) private var controlActiveState
+    private var rowColor: Color {
+        selected ? Color(nsColor: controlActiveState == .inactive ? .unemphasizedSelectedTextColor : .selectedTextColor) : .primary
+    }
+    @State private var recurringDelete = false
     var details: () -> Void = {}
     @State private var editing = false
     @State private var draft = ""
@@ -71,23 +77,29 @@ struct TaskRowView: View {
                     Text(item.title).strikethrough(item.isCompleted)
                         .onTapGesture(count: 2) { if !compact { draft = item.title; editing = true; editingFocused = true } }
                         .onTapGesture { if !compact { details() } }
-                        .foregroundStyle(item.isCompleted ? .secondary : .primary)
+                        .foregroundStyle(selected ? rowColor : item.isCompleted ? Color.secondary : Color.primary)
                         .lineLimit(2).truncationMode(.tail).help(item.title)
                     if !compact {
                         HStack {
                             Label(store.timer.running?.taskID == item.id ? "Running" : item.status == .inProgress ? "Paused" : item.status.title,
                                   systemImage: store.timer.running?.taskID == item.id ? "play.fill" : item.status == .inProgress ? "pause" : "circle")
                             Text(DurationText.concise(store.total(item.id))).monospacedDigit()
-                        }.font(.caption).foregroundStyle(.secondary)
+                                                    if item.seriesID != nil { Image(systemName: "repeat").help("Recurring task") }
+                        }.font(.caption).foregroundStyle(selected ? rowColor : Color.secondary)
                     }
                 }.frame(maxWidth: .infinity, alignment: .leading)
-                TimerControls(item: item, store: store).fixedSize()
+                TimerControls(item: item, store: store).fixedSize().tint(selected ? rowColor : Theme.accent)
                 if !compact {
                     Menu { actions } label: { Image(systemName: "ellipsis") }
-                        .menuStyle(.borderlessButton).fixedSize().accessibilityLabel("Actions for \(item.title)")
+                        .menuStyle(.borderlessButton).fixedSize().tint(selected ? rowColor : Theme.accent).accessibilityLabel("Actions for \(item.title)")
                 }
             }
-        }.padding(.vertical, 5).disabled(store.unavailable)
+        }.padding(.vertical, 5).foregroundStyle(rowColor).disabled(store.unavailable)
+            .confirmationDialog("Delete recurring task?", isPresented: $recurringDelete, titleVisibility: .visible) {
+                Button("Skip this occurrence", role: .destructive) { delete(.skip) }
+                Button("Stop repeating and delete", role: .destructive) { delete(.stop) }
+                Button("Cancel", role: .cancel) {}
+            } message: { Text("Skipping schedules the next occurrence after today. Stopping keeps earlier history and ends the series.") }
             .contextMenu { if !compact { actions } }
     }
     @ViewBuilder private var actions: some View {
@@ -99,11 +111,12 @@ struct TaskRowView: View {
             }
         }
         Button("Delete", role: .destructive) {
-            if store.delete(id: item.id) {
-                // Deletion establishes task-action context; text Undo belongs to editors.
-                NSApp.keyWindow?.makeFirstResponder(nil)
-            }
+            if !item.isCompleted, store.currentSeries(for: item) != nil { recurringDelete = true }
+            else { delete(.stop) }
         }
+    }
+    private func delete(_ disposition: RecurringDeletion) {
+        if store.delete(id: item.id, disposition: disposition) { NSApp.keyWindow?.makeFirstResponder(nil) }
     }
     private func save() { if store.rename(id: item.id, title: draft) { editing = false } }
 }
@@ -114,6 +127,7 @@ struct TaskDetailsView: View {
     let close: () -> Void
     @State private var editor: SessionEditorRequest?
     @State private var deleting: UUID?
+    @State private var repeatEditor = false
 
     var body: some View {
         ScrollView {
@@ -124,6 +138,15 @@ struct TaskDetailsView: View {
                         .accessibilityLabel("Close details").help("Close details")
                 }
                 Text(item.status.title)
+                if let linked = store.series.first(where: { $0.id == item.seriesID }) {
+                    Label(linked.scheduleDescription, systemImage: "repeat")
+                    Text(!linked.enabled ? "Repeating stopped" : linked.currentTaskID == item.id ? "Current occurrence" : "Historical occurrence").font(.caption)
+                    if let next = linked.pendingDay, linked.currentTaskID == item.id { Text("Next: \(next.formatted)").font(.caption) }
+                }
+                if let day = item.scheduledDay { Text("Scheduled for \(day.formatted)").font(.caption) }
+                if !item.isCompleted {
+                    Button("Repeat…") { repeatEditor = true }.disabled(store.unavailable)
+                }
                 Text("Created \(item.createdAt.formatted())")
                 if let date = item.completedAt { Text("Completed \(date.formatted())") }
                 Text(DurationText.precise(store.total(item.id))).font(.title.monospacedDigit())
@@ -158,6 +181,9 @@ struct TaskDetailsView: View {
                 }
             }.padding().frame(maxWidth: .infinity, alignment: .leading)
         }.frame(minWidth: 300).accessibilityIdentifier("task-details")
+            .sheet(isPresented: $repeatEditor) {
+                RepeatEditorView(weekdays: store.currentSeries(for: item)?.weekdays ?? []) { days in store.setRepeat(item.id, weekdays: days) }
+            }
             .sheet(item: $editor) { request in
                 SessionEditorView(taskID: item.id, session: request.session, store: store)
             }
@@ -183,6 +209,7 @@ struct MainTaskWindowView: View {
     @State private var focusToken = 0
     @State private var selection: UUID?
     @State private var detailID: UUID?
+    @State private var collapsedDays: Set<LocalDay> = []
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @FocusState private var listFocused: Bool
     var body: some View {
@@ -204,9 +231,22 @@ struct MainTaskWindowView: View {
             }
             TaskDetailSplit(showsDetails: store.items.contains { $0.id == detailID }) {
                 List(selection: $selection) {
-                    group("In Progress", store.inProgress)
-                    group("To Do", store.todo)
-                    group("Completed", store.completed)
+                    ForEach(store.dayGroups) { day in
+                        Section {
+                            if !collapsedDays.contains(day.id) {
+                                group("In Progress", day.inProgress)
+                                group("To Do", day.todo)
+                                group("Completed", day.completed)
+                            }
+                        } header: {
+                            Button {
+                                if collapsedDays.contains(day.id) { collapsedDays.remove(day.id) }
+                                else { collapsedDays.insert(day.id) }
+                            } label: {
+                                Label(day.title, systemImage: collapsedDays.contains(day.id) ? "chevron.right" : "chevron.down")
+                            }.buttonStyle(.plain).accessibilityLabel("\(collapsedDays.contains(day.id) ? "Expand" : "Collapse") \(day.title)")
+                        }
+                    }
                 }.animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: store.structureRevision).listStyle(.inset).focused($listFocused).accessibilityIdentifier("main-task-list")
                     .onKeyPress(.space) {
                         guard listFocused, let item = store.items.first(where: { $0.id == selection }) else { return .ignored }
@@ -227,12 +267,13 @@ struct MainTaskWindowView: View {
             .onReceive(NotificationCenter.default.publisher(for: .focusNewTask)) { _ in focusToken += 1 }
     }
     @ViewBuilder private func group(_ title: String, _ items: [TodoItem]) -> some View {
+        if !items.isEmpty {
         Section("\(title) · \(items.count)") {
             ForEach(items) { item in
-                TaskRowView(item: item, store: store, details: { selection = item.id; detailID = item.id; listFocused = true }).tag(item.id)
+                TaskRowView(item: item, store: store, selected: selection == item.id, details: { selection = item.id; detailID = item.id; listFocused = true }).tag(item.id)
                     .transition(reduceMotion ? .identity : .opacity.combined(with: .move(edge: .top)))
             }
-            if items.isEmpty { Text("No tasks").foregroundStyle(.secondary) }
+        }
         }
     }
 }

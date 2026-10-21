@@ -55,7 +55,7 @@ struct PersistenceTests {
         try repo.delete(id: id)
         let reopened = try PersistenceController(url: url)
         #expect(try SwiftDataTaskRepository(context: reopened.container.mainContext).fetchAll().isEmpty)
-        #expect(TaskMigrationPlan.schemas.count == 3)
+        #expect(TaskMigrationPlan.schemas.count == 4)
     }
     @Test(arguments: [0, 2, 1000]) func migratesRealV1StoreAndKeepsOriginal(count: Int) throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
@@ -119,6 +119,42 @@ struct PersistenceTests {
         #expect(try SwiftDataTaskRepository(context: reopened.container.mainContext).snapshot() == repo.snapshot())
     }
 
+    @Test func migratesManifestedV3WithoutChangingOriginal() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let location = try StoreLocation(root: root)
+        let original = try location.newURL()
+        let date = Date(timeIntervalSince1970: 123)
+        let item = TodoItem(id: UUID(), title: "V3 task", createdAt: date, updatedAt: date, completedAt: nil, status: .inProgress)
+        let session = WorkSession(id: UUID(), taskID: item.id, startedAt: date, endedAt: date + 10,
+            accumulatedMilliseconds: 9345, lastCheckpointAt: date + 10, endReason: .paused, durationEditedAt: date + 20)
+        let schema = Schema(versionedSchema: TaskSchemaV3.self)
+        let old = try ModelContainer(for: schema, configurations: [ModelConfiguration(schema: schema, url: original, cloudKitDatabase: .none)])
+        old.mainContext.autosaveEnabled = false
+        old.mainContext.insert(TaskSchemaV3.TaskRecord(item))
+        old.mainContext.insert(TaskSchemaV3.SessionRecord(session))
+        try old.mainContext.save()
+        let manifest = root.appendingPathComponent("Disciplina-store.json")
+        let manifestData = try JSONSerialization.data(withJSONObject: ["directory": original.deletingLastPathComponent().lastPathComponent, "schemaVersion": 3])
+        try manifestData.write(to: manifest)
+        #expect(throws: (any Error).self) {
+            _ = try location.open { throw CocoaError(.fileWriteOutOfSpace) }
+        }
+        #expect(try Data(contentsOf: manifest) == manifestData)
+        let migrated = try location.open()
+        #expect(migrated.url != original)
+        let state = try SwiftDataTaskRepository(context: migrated.container.mainContext).snapshot()
+        #expect(state == TaskSnapshot(tasks: [item], sessions: [session]))
+        #expect(try old.mainContext.fetch(FetchDescriptor<TaskSchemaV3.SessionRecord>()).first?.item == session)
+        #expect(try location.open().url == migrated.url)
+        let repo = SwiftDataTaskRepository(context: migrated.container.mainContext)
+        let timer = TimerCoordinator(repository: repo)
+        try timer.editSession(taskID: item.id, sessionID: session.id, milliseconds: 12345)
+        try timer.addSession(taskID: item.id, date: date, milliseconds: 1000)
+        let reopened = try location.open()
+        #expect(try SwiftDataTaskRepository(context: reopened.container.mainContext).snapshot() == repo.snapshot())
+    }
+
     @Test func stagedRestoreFailurePreservesCurrentStore() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
@@ -150,6 +186,33 @@ struct PersistenceTests {
         #expect(throws: (any Error).self) { _ = try location.open() }
         #expect(try Data(contentsOf: original) == bytes)
         #expect(!FileManager.default.fileExists(atPath: root.appendingPathComponent("Disciplina-store.json").path))
+    }
+
+    @Test func recurrenceRoundTripAndRollback() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let location = try StoreLocation(root: root)
+        let persistence = try location.open()
+        var fail = false
+        let repo = SwiftDataTaskRepository(context: persistence.container.mainContext) { context in
+            if fail { throw CocoaError(.fileWriteOutOfSpace) }
+            try context.save()
+        }
+        try TaskService(repository: repo).create(title: "Repeat")
+        let id = try #require(repo.snapshot().tasks.first?.id)
+        let timer = TimerCoordinator(repository: repo)
+        try timer.setRepeat(taskID: id, weekdays: [2, 4, 6])
+        let original = try repo.snapshot()
+        fail = true
+        #expect(throws: (any Error).self) { try timer.setStatus(id: id, status: .completed) }
+        #expect(try repo.snapshot() == original)
+        fail = false
+        try timer.setStatus(id: id, status: .completed)
+        let pending = try repo.snapshot()
+        let reopened = try location.open()
+        #expect(try SwiftDataTaskRepository(context: reopened.container.mainContext).snapshot() == pending)
+        let restored = try location.restore(pending, currentURL: persistence.url)
+        #expect(try SwiftDataTaskRepository(context: restored.container.mainContext).snapshot() == pending)
     }
 
     @Test func thousandTasks() throws {
