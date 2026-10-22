@@ -5,6 +5,8 @@ import Testing
 @MainActor
 final class MemoryRepository: TaskRepository {
     var items: [TodoItem] = []
+    var goals: [Goal] = []
+    var milestones: [Milestone] = []
     var series: [RecurrenceSeries] = []
     var sessions: [WorkSession] = []
     var failFetch = false
@@ -22,12 +24,15 @@ final class MemoryRepository: TaskRepository {
     }
     func delete(id: UUID) throws {
         guard items.contains(where: { $0.id == id }) else { throw TaskError.notFound }
-        try writing(); items.removeAll { $0.id == id }
+        var state = try snapshot()
+        if let i = state.tasks.firstIndex(where: { $0.id == id }) { state.detachTask(at: i) }
+        state.tasks.removeAll { $0.id == id }; state.sessions.removeAll { $0.taskID == id }
+        try commit(state)
     }
-    func snapshot() throws -> TaskSnapshot { TaskSnapshot(tasks: try fetchAll(), sessions: sessions, series: series) }
+    func snapshot() throws -> TaskSnapshot { TaskSnapshot(tasks: try fetchAll(), sessions: sessions, series: series, goals: goals, milestones: milestones) }
     func commit(_ snapshot: TaskSnapshot) throws {
         try snapshot.validate()
-        try writing(); items = snapshot.tasks; sessions = snapshot.sessions; series = snapshot.series
+        try writing(); items = snapshot.tasks; sessions = snapshot.sessions; series = snapshot.series; goals = snapshot.goals; milestones = snapshot.milestones
     }
     private func writing() throws {
         if failWrite { throw CocoaError(.fileWriteOutOfSpace) }

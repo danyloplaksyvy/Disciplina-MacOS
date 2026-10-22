@@ -7,6 +7,36 @@ final class TaskStore {
     private var structure: [[UUID]] { [inProgress.map(\.id), todo.map(\.id), completed.map(\.id)] }
     let service: TaskService
     let timer: TimerCoordinator
+    let goalService: GoalService
+    private(set) var goals: [Goal] = []
+    private(set) var milestones: [Milestone] = []
+    private(set) var goalProgress = GoalProgressService()
+    private enum DeletedEntry { case task(UUID), milestone(Milestone) }
+    private var deletionUndo: [DeletedEntry] = []
+    var canUndoDeletion: Bool { !deletionUndo.isEmpty && !unavailable }
+    private var goalStructure: [[UUID]] {
+        GoalStatus.allCases.map { status in goals.filter { $0.status == status }.map(\.id) }
+        + [milestones.filter { !$0.isCompleted }.map(\.id), milestones.filter(\.isCompleted).map(\.id)]
+    }
+    func goals(in status: GoalStatus) -> [Goal] {
+        goals.filter { $0.status == status }.sorted {
+            let a = status == .active ? $0.updatedAt : (status == .achieved ? $0.achievedAt! : $0.archivedAt!)
+            let b = status == .active ? $1.updatedAt : (status == .achieved ? $1.achievedAt! : $1.archivedAt!)
+            return a == b ? $0.id.uuidString < $1.id.uuidString : a > b
+        }
+    }
+    func milestones(for id: UUID) -> [Milestone] {
+        milestones.filter { $0.goalID == id }.sorted {
+            $0.sortOrder == $1.sortOrder ? $0.id.uuidString < $1.id.uuidString : $0.sortOrder < $1.sortOrder
+        }
+    }
+    func goalTotal(_ id: UUID, taskID: UUID? = nil) -> Int64 {
+        let saved = taskID.map { goalProgress.taskContributions[id]?[$0] ?? 0 } ?? (goalProgress.durations[id] ?? 0)
+        guard !unavailable, let running = timer.running, running.goalIDAtStart == id,
+              taskID == nil || taskID == running.taskID else { return saved }
+        let sum = saved.addingReportingOverflow(max(0, timer.elapsedMilliseconds - running.accumulatedMilliseconds))
+        return sum.overflow ? saved : sum.partialValue
+    }
     private(set) var series: [RecurrenceSeries] = []
     private var deletionSeries: [UUID: (before: RecurrenceSeries, after: UUID)] = [:]
     private(set) var dayGroups: [TaskDayGroup] = []
@@ -51,6 +81,11 @@ final class TaskStore {
         let previousGroups = [inProgress, todo, completed]
         items = snapshot.tasks.filter { $0.deletedAt == nil }
         deleted = snapshot.tasks.filter { $0.deletedAt != nil }
+        if sessions != snapshot.sessions || milestones != snapshot.milestones {
+            goalProgress = GoalProgressService(milestones: snapshot.milestones, sessions: snapshot.sessions)
+        }
+        goals = snapshot.goals
+        milestones = snapshot.milestones
         sessions = snapshot.sessions
         series = snapshot.series
         active = items.filter { !$0.isCompleted }.sorted {
@@ -67,8 +102,9 @@ final class TaskStore {
         for session in sessions { totals[session.taskID, default: 0] += session.accumulatedMilliseconds }
     }
 
-    init(service: TaskService, timer: TimerCoordinator? = nil) {
+    init(service: TaskService, timer: TimerCoordinator? = nil, goalService: GoalService? = nil) {
         self.service = service
+        self.goalService = goalService ?? GoalService(repository: service.repository)
         self.timer = timer ?? TimerCoordinator(repository: service.repository)
         self.timer.onCommit = { [weak self] in self?.refresh() }
         do { try self.timer.recover() } catch { errorMessage = error.localizedDescription; needsRefresh = true; return }
@@ -95,7 +131,7 @@ final class TaskStore {
         } catch { errorMessage = error.localizedDescription; needsRefresh = true }
     }
 
-    @discardableResult func create(title: String) -> Bool { mutate { try service.create(title: title) } }
+    @discardableResult func create(title: String, goalID: UUID? = nil) -> Bool { mutate { try service.create(title: title, goalID: goalID) } }
     @discardableResult func rename(id: UUID, title: String) -> Bool { mutate { try service.rename(id: id, title: title) } }
     @discardableResult func setCompleted(id: UUID, isCompleted: Bool) -> Bool {
         mutate { try timer.setStatus(id: id, status: isCompleted ? .completed : .todo) }
@@ -106,7 +142,7 @@ final class TaskStore {
             ticket = try timer.delete(id: id, disposition: disposition)
         }
         if let ticket { deletionSeries[id] = ticket }
-        if saved { deletedIDs.append(id); notice = "Task moved to Recently Deleted." }
+        if saved { deletedIDs.append(id); deletionUndo.append(.task(id)); notice = "Task moved to Recently Deleted." }
         return saved
     }
     @discardableResult func start(_ id: UUID) -> Bool {
@@ -142,14 +178,25 @@ final class TaskStore {
             snapshot.tasks[index].updatedAt = Date()
             try service.repository.commit(snapshot)
         }
-        if result { deletedIDs.removeAll { $0 == id }; deletionSeries[id] = nil; notice = independent ? "Task restored independently; recurrence was left unchanged." : "Task restored." }
+        if result { removeTaskUndo(id); deletionSeries[id] = nil; notice = independent ? "Task restored independently; recurrence was left unchanged." : "Task restored." }
         return result
     }
-    func undoDelete() { if let id = deletedIDs.last { _ = restore(id, undo: true) } }
+    private func removeTaskUndo(_ id: UUID) {
+        deletedIDs.removeAll { $0 == id }
+        deletionUndo.removeAll { if case .task(let value) = $0 { return value == id }; return false }
+    }
+    func undoDelete() {
+        guard let entry = deletionUndo.last else { return }
+        switch entry {
+        case .task(let id): _ = restore(id, undo: true)
+        case .milestone(let value):
+            if mutate({ try goalService.restoreMilestone(value) }) { deletionUndo.removeLast(); notice = "Milestone restored." }
+        }
+    }
     @discardableResult func permanentlyDelete(_ id: UUID) -> Bool {
         guard deleted.contains(where: { $0.id == id }) else { return false }
         let result = mutate { try service.repository.delete(id: id) }
-        if result { deletedIDs.removeAll { $0 == id }; deletionSeries[id] = nil }
+        if result { removeTaskUndo(id); deletionSeries[id] = nil }
         return result
     }
     func prepareSessionEditor(taskID: UUID) -> Bool {
@@ -185,11 +232,40 @@ final class TaskStore {
                                      now: groupingDate, calendar: groupingCalendar)
     }
 
+    @discardableResult func saveGoal(id: UUID?, title: String, criteria: String, targetDay: LocalDay?) -> UUID? {
+        var result: UUID?
+        let saved = mutate { result = try goalService.save(id: id, title: title, criteria: criteria, targetDay: targetDay) }
+        return saved ? result : nil
+    }
+    @discardableResult func goalTransition(_ id: UUID, _ action: GoalService.Lifecycle) -> Bool {
+        mutate { try goalService.transition(id, action) }
+    }
+    @discardableResult func saveMilestone(goalID: UUID, id: UUID?, title: String) -> Bool {
+        mutate { try goalService.saveMilestone(goalID: goalID, id: id, title: title) }
+    }
+    @discardableResult func completeMilestone(_ id: UUID, completed: Bool) -> Bool {
+        mutate { try goalService.completeMilestone(id, completed: completed) }
+    }
+    @discardableResult func reorderMilestones(goalID: UUID, ids: [UUID]) -> Bool {
+        mutate { try goalService.reorder(goalID: goalID, ids: ids) }
+    }
+    @discardableResult func deleteMilestone(_ id: UUID) -> Bool {
+        var deleted: Milestone?
+        let saved = mutate { deleted = try goalService.deleteMilestone(id) }
+        if saved, let deleted { deletionUndo.append(.milestone(deleted)); notice = "Milestone deleted." }
+        return saved
+    }
+    @discardableResult func assignGoal(taskID: UUID, goalID: UUID?) -> Bool {
+        mutate { try timer.assignGoal(taskID: taskID, goalID: goalID) }
+    }
+    func prepareGoalAssignment(taskID: UUID) -> Bool { prepareSessionEditor(taskID: taskID) }
+
     func dismissError() { if !needsRefresh { errorMessage = nil } }
 
     private func mutate(_ action: () throws -> Void) -> Bool {
         guard !unavailable else { return false }
         let previousStructure = structure
+        let previousGoals = goalStructure
         do { try action() } catch {
             errorMessage = "Could not save the change. \(error.localizedDescription)"
             return false
@@ -198,7 +274,7 @@ final class TaskStore {
             let snapshot = try service.repository.snapshot()
             try snapshot.validate()
             publish(snapshot)
-            if structure != previousStructure { structureRevision += 1 }
+            if structure != previousStructure || goalStructure != previousGoals { structureRevision += 1 }
             errorMessage = nil
         } catch {
             needsRefresh = true

@@ -53,6 +53,107 @@ final class DisciplinaUITests: XCTestCase {
         add(attachment)
     }
 
+    private func openGoals() {
+        let button = app.buttons["navigate-goals"]
+        if button.exists && button.isHittable { button.click() }
+        else {
+            app.menuButtons["compact-navigation"].click()
+            app.menuItems["Goals"].click()
+        }
+        XCTAssertTrue(app.buttons["New Goal"].waitForExistence(timeout: 5))
+    }
+    private func createGoal(_ title: String) {
+        app.buttons["New Goal"].click()
+        let sheet = app.sheets.firstMatch
+        XCTAssertTrue(sheet.waitForExistence(timeout: 5))
+        sheet.textFields["goal-title"].click(); sheet.textFields["goal-title"].typeText(title)
+        let criterion = sheet.textViews["goal-criteria"]
+        criterion.click(); criterion.typeText("A verified outcome")
+        sheet.buttons["Save"].click()
+        XCTAssertTrue(app.scrollViews["goal-details"].waitForExistence(timeout: 5))
+    }
+    private func goalButton(_ label: String) -> XCUIElement {
+        let pane = app.scrollViews["goal-details"]
+        let button = pane.buttons[label].firstMatch
+        XCTAssertTrue(button.waitForExistence(timeout: 5))
+        for _ in 0..<15 {
+            let frame = button.frame
+            if frame.minY >= pane.frame.minY && frame.maxY <= pane.frame.maxY { break }
+            pane.scroll(byDeltaX: 0, deltaY: frame.midY > pane.frame.midY ? -180 : 180)
+        }
+        return button
+    }
+    func testGoalsMilestonesLifecycleAndUndo() {
+        openGoals(); createGoal("Launch project")
+        goalButton("Add Milestone").click()
+        var sheet = app.sheets.firstMatch
+        sheet.textFields["milestone-title"].typeText("First release")
+        sheet.buttons["Save"].click()
+        goalButton("Complete milestone First release").click()
+        XCTAssertTrue(app.staticTexts["1 of 1 milestones completed"].waitForExistence(timeout: 5))
+        goalButton("Mark Achieved").click()
+        XCTAssertTrue(app.buttons["Reopen Goal"].exists)
+        goalButton("Archive Goal").click(); goalButton("Restore Goal").click()
+        XCTAssertTrue(app.buttons["Reopen Goal"].exists)
+        goalButton("Reopen Goal").click()
+        let menu = app.scrollViews["goal-details"].menuButtons["Actions for milestone First release"]
+        menu.click(); app.menuItems["Delete Milestone"].click()
+        XCTAssertTrue(app.staticTexts["No milestones defined"].waitForExistence(timeout: 5))
+        app.typeKey("z", modifierFlags: .command)
+        XCTAssertTrue(app.staticTexts["First release"].waitForExistence(timeout: 5))
+        goalButton("Edit Goal").click()
+        sheet = app.sheets.firstMatch
+        sheet.textFields["goal-title"].click(); sheet.textFields["goal-title"].typeKey("a", modifierFlags: .command)
+        sheet.textFields["goal-title"].typeText("Cancelled title")
+        sheet.buttons["Cancel"].click()
+        XCTAssertTrue(app.staticTexts["Launch project"].exists)
+        XCTAssertFalse(app.staticTexts["Cancelled title"].exists)
+        let attachment = XCTAttachment(screenshot: app.windows["main"].screenshot())
+        attachment.name = "goals-milestones"; attachment.lifetime = .keepAlways; add(attachment)
+    }
+    func testGoalTaskCreationAttributionAndPauseBeforeUnlinking() {
+        openGoals(); createGoal("Learn Swift")
+        let pane = app.scrollViews["goal-details"]
+        let field = pane.textFields["new-task"]
+        for _ in 0..<8 {
+            if field.exists && field.frame.minY >= pane.frame.minY && field.frame.maxY <= pane.frame.maxY { break }
+            pane.scroll(byDeltaX: 0, deltaY: -150)
+        }
+        field.click(); field.typeText("Practice Swift\n")
+        XCTAssertTrue(pane.staticTexts["Practice Swift"].waitForExistence(timeout: 5))
+        goalButton("Start Practice Swift").click()
+        pane.staticTexts["Practice Swift"].click()
+        XCTAssertTrue(app.scrollViews["task-details"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Goal: Learn Swift"].firstMatch.exists)
+        clickDetailButton("Change Goal…")
+        let sheet = app.sheets.firstMatch
+        sheet.popUpButtons["goal-picker"].click(); app.menuItems["Unassigned"].click()
+        sheet.buttons["Save"].click()
+        XCTAssertTrue(app.buttons["Pause and Continue"].waitForExistence(timeout: 5))
+        app.buttons["Pause and Continue"].click()
+        XCTAssertTrue(app.buttons["Resume Practice Swift"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Goal: Unassigned"].exists)
+        XCTAssertTrue(app.staticTexts["Goal: Learn Swift"].exists)
+        app.buttons["goals-back"].click()
+        XCTAssertFalse(app.scrollViews["goal-details"].staticTexts["Practice Swift"].exists)
+        app.buttons["navigate-tasks"].click()
+        XCTAssertTrue(app.outlines["main-task-list"].staticTexts["Practice Swift"].exists)
+    }
+    func testGoalsValidationAndNavigationPreserveTaskSelection() {
+        add("Keep selection")
+        app.outlines["main-task-list"].staticTexts["Keep selection"].click()
+        openGoals(); app.buttons["New Goal"].click()
+        let sheet = app.sheets.firstMatch
+        sheet.buttons["Save"].click()
+        XCTAssertTrue(sheet.staticTexts["goal-editor-error"].waitForExistence(timeout: 5))
+        sheet.buttons["Cancel"].click()
+        app.buttons["navigate-tasks"].click()
+        XCTAssertTrue(app.scrollViews["task-details"].staticTexts["Keep selection"].exists)
+        XCTAssertGreaterThanOrEqual(app.outlines["main-task-list"].frame.width, 360)
+        XCTAssertGreaterThanOrEqual(app.scrollViews["task-details"].frame.width, 300)
+        XCTAssertEqual(app.statusItems.count, 1)
+    }
+
     func testLoginLaunchHasStatusItemWithoutMainWindow() {
         app.terminate()
         app.launchArguments = ["--ui-testing", "--simulate-login-launch"]

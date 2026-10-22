@@ -132,7 +132,7 @@ final class AppDependencies {
     }
     func showMain() {
         if mainWindow == nil {
-            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 860, height: 600),
+            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1100, height: 700),
                                   styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
             window.title = "Disciplina"; window.identifier = NSUserInterfaceItemIdentifier("main")
             window.isReleasedWhenClosed = false
@@ -142,7 +142,8 @@ final class AppDependencies {
                 openSettings: { [weak self] in self?.openSettings?() }))
             // NSHostingController initially proposes its minimum size. Apply the
             // intended initial content size after installing it, once per window.
-            window.setContentSize(NSSize(width: 860, height: 600))
+            let available = (window.screen ?? NSScreen.main)?.visibleFrame.size ?? NSSize(width: 1100, height: 700)
+            window.setContentSize(NSSize(width: min(1100, available.width), height: min(700, available.height - 40)))
             window.center()
             mainWindow = NSWindowController(window: window)
         }
@@ -234,7 +235,7 @@ private struct MainWindowContent: View {
     var body: some View {
         Group {
             if let store = dependencies.store {
-                MainTaskWindowView(store: store, openSettings: openSettings).id(ObjectIdentifier(store))
+                MainNavigationView(store: store, openSettings: openSettings).id(ObjectIdentifier(store))
             } else { StartupFailureView(dependencies: dependencies) }
         }
     }
