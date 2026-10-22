@@ -23,20 +23,16 @@ struct MainNavigationView: View {
                 }.navigationSplitViewColumnWidth(min: 200, ideal: 220, max: 220)
             } detail: {
                 VStack(spacing: 0) {
-                    HStack {
-                        Button {
-                            manuallyHidden = visibility != .detailOnly
-                            visibility = manuallyHidden || geometry.size.width < 1000 ? .detailOnly : .all
-                        } label: { Image(systemName: "sidebar.left") }.help("Toggle sidebar").accessibilityLabel("Toggle sidebar")
-                        if visibility == .detailOnly {
+                    if visibility == .detailOnly {
+                        HStack {
                             Menu(destination.rawValue) {
                                 Button("Tasks") { navigate(.tasks) }
                                 Button("Goals") { navigate(.goals) }
                                 Divider(); Button("Settings", action: openSettings)
                             }.accessibilityIdentifier("compact-navigation")
-                        }
-                        Spacer()
-                    }.padding(.horizontal, 24).padding(.top, 8)
+                            Spacer()
+                        }.padding(.horizontal, 24).padding(.top, 8)
+                    }
                     // Keep both destinations mounted so drafts, selection, scroll and divider state survive navigation.
                     ZStack {
                         MainTaskWindowView(store: store, openSettings: openSettings)
@@ -50,6 +46,10 @@ struct MainNavigationView: View {
             }.navigationSplitViewStyle(.balanced)
                 .onChange(of: geometry.size.width, initial: true) { _, width in
                     visibility = width < 1000 || manuallyHidden ? .detailOnly : .all
+                }
+                .onChange(of: visibility) { _, value in
+                    if geometry.size.width >= 1000 { manuallyHidden = value == .detailOnly }
+                    else if value != .detailOnly { visibility = .detailOnly }
                 }
                 .onReceive(NotificationCenter.default.publisher(for: .focusNewTask)) { _ in
                     if destination != .tasks {

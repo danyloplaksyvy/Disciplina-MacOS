@@ -90,7 +90,7 @@ final class DisciplinaUITests: XCTestCase {
         sheet.textFields["milestone-title"].typeText("First release")
         sheet.buttons["Save"].click()
         goalButton("Complete milestone First release").click()
-        XCTAssertTrue(app.staticTexts["1 of 1 milestones completed"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "1 of 1 milestones completed")).firstMatch.waitForExistence(timeout: 5))
         goalButton("Mark Achieved").click()
         XCTAssertTrue(app.buttons["Reopen Goal"].exists)
         goalButton("Archive Goal").click(); goalButton("Restore Goal").click()
@@ -98,7 +98,7 @@ final class DisciplinaUITests: XCTestCase {
         goalButton("Reopen Goal").click()
         let menu = app.scrollViews["goal-details"].menuButtons["Actions for milestone First release"]
         menu.click(); app.menuItems["Delete Milestone"].click()
-        XCTAssertTrue(app.staticTexts["No milestones defined"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "No milestones defined")).firstMatch.waitForExistence(timeout: 5))
         app.typeKey("z", modifierFlags: .command)
         XCTAssertTrue(app.staticTexts["First release"].waitForExistence(timeout: 5))
         goalButton("Edit Goal").click()
@@ -130,7 +130,7 @@ final class DisciplinaUITests: XCTestCase {
         sheet.popUpButtons["goal-picker"].click(); app.menuItems["Unassigned"].click()
         sheet.buttons["Save"].click()
         XCTAssertTrue(app.buttons["Pause and Continue"].waitForExistence(timeout: 5))
-        app.buttons["Pause and Continue"].click()
+        app.windows["main"].sheets.buttons["Pause and Continue"].firstMatch.click()
         XCTAssertTrue(app.buttons["Resume Practice Swift"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["Goal: Unassigned"].exists)
         XCTAssertTrue(app.staticTexts["Goal: Learn Swift"].exists)
@@ -451,7 +451,10 @@ final class DisciplinaUITests: XCTestCase {
         XCTAssertEqual(XCTWaiter.wait(for: [fullscreen], timeout: 8), .completed)
         // Native full screen auto-hides the menu bar. Reveal it before targeting
         // the status item, whose accessibility frame is otherwise off-screen.
-        window.coordinate(withNormalizedOffset: CGVector(dx: 0.75, dy: 0)).hover()
+        // A native navigation toolbar changes the accessible window's top inset.
+        // Reveal the menu bar at the display edge, not the content's top edge.
+        window.coordinate(withNormalizedOffset: .zero)
+            .withOffset(CGVector(dx: window.frame.width * 0.75, dy: 1 - window.frame.minY)).hover()
         let status = app.statusItems.firstMatch
         let visible = XCTNSPredicateExpectation(predicate: NSPredicate(format: "hittable == true"), object: status)
         XCTAssertEqual(XCTWaiter.wait(for: [visible], timeout: 5), .completed)

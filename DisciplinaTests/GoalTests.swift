@@ -104,6 +104,25 @@ import Testing
         #expect(repo.items[0].goalID == goal)
         #expect(repo.sessions[0].accumulatedMilliseconds == 2000); #expect(repo.sessions[0].goalIDAtStart == nil)
     }
+    @Test func cancellationAndUnrelatedRunningTaskKeepTimerAndHistory() throws {
+        let (repo, clock, timer, store, task, goal) = try fixture()
+        #expect(store.start(task)); clock.advance(2)
+        let other = repo.items[1].id
+        #expect(store.assignGoal(taskID: other, goalID: goal)); #expect(timer.running?.taskID == task)
+        #expect(store.prepareGoalAssignment(taskID: task))
+        // Cancelling after a required pause performs no assignment and never resumes.
+        #expect(timer.running == nil); #expect(repo.items.first { $0.id == task }?.goalID == nil)
+        #expect(repo.sessions[0].accumulatedMilliseconds == 2000)
+        #expect(store.setCompleted(id: other, isCompleted: true))
+        #expect(store.assignGoal(taskID: other, goalID: nil))
+        #expect(repo.items.first { $0.id == other }?.isCompleted == true)
+        let before = try repo.snapshot()
+        repo.failWrite = true
+        #expect(store.saveGoal(id: nil, title: "Fails", criteria: "Result", targetDay: nil) == nil)
+        #expect(!store.saveMilestone(goalID: goal, id: nil, title: "Fails"))
+        #expect(try repo.snapshot() == before)
+    }
+
     @Test func milestoneDeletionRefreshFailureStillSupportsUndo() throws {
         let (repo, _, _, store, _, goal) = try fixture()
         #expect(store.saveMilestone(goalID: goal, id: nil, title: "M"))

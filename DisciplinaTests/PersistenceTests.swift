@@ -192,14 +192,15 @@ struct PersistenceTests {
         let repo = SwiftDataTaskRepository(context: persistence.container.mainContext) { context in
             if fail { throw CocoaError(.fileWriteOutOfSpace) }; try context.save()
         }
-        let service = GoalService(repository: repo)
-        let goal = try service.save(id: nil, title: "Outcome", criteria: "Verified", targetDay: LocalDay(Date()))
+        let date = Date(timeIntervalSince1970: 1234.125)
+        let service = GoalService(repository: repo, now: { date })
+        let goal = try service.save(id: nil, title: "Outcome", criteria: "Verified", targetDay: LocalDay(date))
         try service.saveMilestone(goalID: goal, id: nil, title: "First")
-        try TaskService(repository: repo).create(title: "Work", goalID: goal)
+        try TaskService(repository: repo, now: { date }).create(title: "Work", goalID: goal)
         let task = try #require(repo.snapshot().tasks.first?.id)
-        let timer = TimerCoordinator(repository: repo)
+        let timer = TimerCoordinator(repository: repo, sample: { TimeSample(awake: 0, continuous: 0, date: date) })
         try timer.setRepeat(taskID: task, weekdays: [2,4,6])
-        try timer.addSession(taskID: task, date: Date(), milliseconds: 1234)
+        try timer.addSession(taskID: task, date: date, milliseconds: 1234)
         let before = try repo.snapshot()
         fail = true
         #expect(throws: (any Error).self) { try service.transition(goal, .archive) }
@@ -210,6 +211,7 @@ struct PersistenceTests {
         let reopened = try location.open()
         #expect(try SwiftDataTaskRepository(context: reopened.container.mainContext).snapshot() == before)
         let decoded = try BackupDocument.decode(BackupDocument(snapshot: before).encode()).validatedSnapshot()
+        #expect(decoded == before)
         #expect(throws: (any Error).self) { _ = try location.restore(decoded, currentURL: persistence.url) { throw CocoaError(.fileWriteOutOfSpace) } }
         #expect(try location.open().url == persistence.url)
         let restored = try location.restore(decoded, currentURL: persistence.url)

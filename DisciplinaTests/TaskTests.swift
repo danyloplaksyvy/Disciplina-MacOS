@@ -17,7 +17,7 @@ final class MemoryRepository: TaskRepository {
         if failFetch { throw CocoaError(.fileReadUnknown) }
         return items
     }
-    func insert(_ item: TodoItem) throws { try writing(); items.append(item) }
+    func insert(_ item: TodoItem) throws { var state = try snapshot(); state.tasks.append(item); try commit(state) }
     func update(_ item: TodoItem) throws {
         guard let index = items.firstIndex(where: { $0.id == item.id }) else { throw TaskError.notFound }
         try writing(); items[index] = item
