@@ -51,7 +51,7 @@ struct GoalsView: View {
                     Text("Create a goal to connect your tasks with something you want to achieve.")
                 } actions: {
                     Button("Create Goal") { editor = GoalEditorRequest() }.disabled(store.unavailable)
-                }
+                }.frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 List {
                     goalSection(.active)
@@ -66,7 +66,7 @@ struct GoalsView: View {
                 }.accessibilityIdentifier("goals-list")
                     .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: store.structureRevision)
             }
-        }.padding(24).tint(Theme.accent)
+        }.padding(24).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading).tint(Theme.accent)
             .sheet(item: $editor) { request in
                 GoalEditorView(store: store, goal: request.goal) { selectedGoal = $0; selectedTask = nil }
             }

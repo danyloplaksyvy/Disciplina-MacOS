@@ -154,6 +154,27 @@ final class DisciplinaUITests: XCTestCase {
         XCTAssertEqual(app.statusItems.count, 1)
     }
 
+    func testHundredGoalsWithHundredTasksRemainNavigable() {
+        app.terminate()
+        app.launchArguments = ["--ui-testing", "--seed-goals-performance"]
+        app.launch()
+        XCTAssertTrue(app.textFields["new-task"].waitForExistence(timeout: 60))
+        openGoals()
+        let goal = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Open goal Performance Goal")).firstMatch
+        XCTAssertTrue(goal.waitForExistence(timeout: 5)); goal.click()
+        XCTAssertTrue(app.scrollViews["goal-details"].waitForExistence(timeout: 5))
+        let start = app.scrollViews["goal-details"].buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Start Work")).firstMatch
+        XCTAssertTrue(start.waitForExistence(timeout: 5))
+        let label = start.label
+        goalButton(label).click()
+        let pause = app.buttons[label.replacingOccurrences(of: "Start ", with: "Pause ")]
+        XCTAssertTrue(pause.waitForExistence(timeout: 10)); pause.click()
+        XCTAssertTrue(app.buttons[label.replacingOccurrences(of: "Start ", with: "Resume ")].waitForExistence(timeout: 10))
+        app.buttons["navigate-tasks"].click()
+        XCTAssertTrue(app.outlines["main-task-list"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.statusItems.count, 1)
+    }
+
     func testLoginLaunchHasStatusItemWithoutMainWindow() {
         app.terminate()
         app.launchArguments = ["--ui-testing", "--simulate-login-launch"]

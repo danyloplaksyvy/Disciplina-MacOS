@@ -72,6 +72,20 @@ final class AppDependencies {
                 let location = try StoreLocation(); self.location = location
                 persistence = try location.open()
             }
+            #if DEBUG
+            if testing && ProcessInfo.processInfo.arguments.contains("--seed-goals-performance") {
+                var snapshot = TaskSnapshot()
+                let date = Date(timeIntervalSince1970: 1700000000)
+                for g in 0..<100 {
+                    let goal = Goal(id: UUID(), title: "Performance Goal \(g)", successCriteria: "Verify responsive navigation", createdAt: date, updatedAt: date)
+                    snapshot.goals.append(goal)
+                    for t in 0..<100 {
+                        snapshot.tasks.append(TodoItem(id: UUID(), title: "Work \(g)-\(t)", createdAt: date, updatedAt: date, completedAt: nil, goalID: goal.id))
+                    }
+                }
+                try SwiftDataTaskRepository(context: persistence.container.mainContext).commit(snapshot)
+            }
+            #endif
             install(persistence, testing: testing)
             startupError = nil
         } catch {
