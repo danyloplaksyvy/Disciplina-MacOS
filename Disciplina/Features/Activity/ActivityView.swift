@@ -2,6 +2,8 @@ import SwiftUI
 
 struct ActivityView: View {
     let store: TaskStore
+    var isVisible = true
+    @State private var hasOpened = false
     @State private var selection = LocalDay(Date())
     @State private var weekly = false
     @State private var taskID: UUID?
@@ -56,6 +58,9 @@ struct ActivityView: View {
             }
         }.padding(24).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .accessibilityIdentifier("activity-view")
+            .onChange(of: isVisible, initial: true) { _, visible in
+                if visible && !hasOpened { selection = LocalDay(Date(), calendar: calendar); hasOpened = true }
+            }
     }
     private func movePeriod(_ amount: Int) {
         if let date = calendar.date(byAdding: weekly ? .weekOfYear : .month, value: amount, to: selectedDate) { selection = LocalDay(date, calendar: calendar) }
@@ -98,7 +103,7 @@ struct ActivityView: View {
     private func totalText(_ values: [ActivitySummary.Entry]) -> String {
         var total: Int64 = 0
         for value in values { let sum = total.addingReportingOverflow(value.milliseconds); if sum.overflow { return "Duration exceeds display range" }; total = sum.partialValue }
-        return DurationText.concise(total)
+        return total > 0 && total < 60000 ? "<1m" : DurationText.concise(total)
     }
     private var detail: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -111,13 +116,10 @@ struct ActivityView: View {
                     summaryLine("Legacy time", entries.filter(\.legacy))
                     Text("Legacy time is assigned to the session start date. Its daily distribution was not recorded.").font(.caption).foregroundStyle(.secondary)
                 }
-                let pending = selectedDays.reduce(Int64(0)) { $0 + (store.timer.pendingActivity[$1] ?? 0) }
-                if pending > 0 {
-                    Text("Running · +\(DurationText.precise(pending)) since checkpoint").font(.caption).foregroundStyle(Theme.accent)
-                }
+                ActivityLiveDelta(store: store, days: selectedDays)
             }
-            Text("\(Set(entries.map(\.taskID)).count) tasks worked on").font(.caption)
-            if entries.isEmpty { Text("No recorded work for this period.").foregroundStyle(.secondary) }
+            Text(store.unavailable ? "Tasks worked on unavailable" : "\(Set(entries.map(\.taskID)).count) tasks worked on").font(.caption)
+            if entries.isEmpty && !store.unavailable { Text("No recorded work for this period.").foregroundStyle(.secondary) }
             goalBreakdown
             ForEach(entries.sorted { $0.startedAt == $1.startedAt ? $0.id.uuidString < $1.id.uuidString : $0.startedAt < $1.startedAt }) { entry in
                 let task = (store.items + store.deleted).first { $0.id == entry.taskID }
@@ -146,8 +148,8 @@ struct ActivityView: View {
     private var weeklySummary: some View {
         VStack(alignment: .leading, spacing: 12) {
             Divider()
-            let tasks = store.items.filter { $0.completedAt.map { period.contains($0) } ?? false }.count
-            let milestones = store.milestones.filter { $0.completedAt.map { period.contains($0) } ?? false }.count
+            let tasks = store.items.filter { $0.completedAt.map { $0 >= period.start && $0 < period.end } ?? false }.count
+            let milestones = store.milestones.filter { $0.completedAt.map { $0 >= period.start && $0 < period.end } ?? false }.count
             Text("Currently completed during this week").font(.headline)
             Text(store.unavailable ? "Completion counts unavailable" : "\(tasks) tasks · \(milestones) milestones")
             Text("Reopening or deleting records changes these counts. Completion dates use your current local time zone.").font(.caption).foregroundStyle(.secondary)
@@ -157,5 +159,18 @@ struct ActivityView: View {
                 if !store.unavailable { GoalProgressView(progress: store.goalProgress.progress[goal.id] ?? .init()) }
             }
         }.frame(maxWidth: .infinity, alignment: .leading).padding(.top)
+    }
+}
+
+/// Observe presentation time in isolation; the calendar and historical review only
+/// recompute when committed records or the selected period change.
+private struct ActivityLiveDelta: View {
+    let store: TaskStore
+    let days: [LocalDay]
+    var body: some View {
+        let pending = days.reduce(Int64(0)) { $0 + (store.timer.pendingActivity[$1] ?? 0) }
+        if !store.unavailable && pending > 0 {
+            Text("Running · +\(DurationText.precise(pending)) since checkpoint").font(.caption).foregroundStyle(Theme.accent)
+        }
     }
 }

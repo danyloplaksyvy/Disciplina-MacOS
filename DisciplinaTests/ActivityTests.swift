@@ -41,6 +41,9 @@ import Testing
         let (repo, clock, timer, id) = try fixture()
         try timer.start(taskID: id); clock.advance(5); try timer.pause()
         let before = repo.sessions[0], values = try #require(before.allocations)
+        let writes = repo.writes
+        try timer.editDailySession(taskID: id, sessionID: before.id, amounts: Dictionary(uniqueKeysWithValues: values.map { ($0.id, $0.milliseconds) }))
+        #expect(repo.writes == writes)
         #expect(throws: SessionEditError.self) { try timer.editSession(taskID: id, sessionID: before.id, milliseconds: 10) }
         try timer.editDailySession(taskID: id, sessionID: before.id, amounts: [values[0].id: 0, values[1].id: 1234])
         let after = repo.sessions[0]
@@ -80,6 +83,26 @@ import Testing
         var invalid = snapshot; invalid.sessions[0].allocations![0].milliseconds += 1
         #expect(throws: DataError.self) { try invalid.validate() }
     }
+    @Test func rejectsMalformedAllocationsAndNormalizesImportedAppearance() throws {
+        let (repo, clock, timer, id) = try fixture()
+        try timer.start(taskID: id); clock.advance(5); try timer.pause()
+        let original = try repo.snapshot()
+        var bad = original
+        bad.sessions[0].allocations!.append(bad.sessions[0].allocations![0])
+        #expect(throws: DataError.self) { try bad.validate() }
+        bad = original; bad.sessions[0].allocations![0].provenance = .manual
+        #expect(throws: DataError.self) { try bad.validate() }
+        bad = original; bad.sessions[0].allocations![0].milliseconds = -1
+        #expect(throws: DataError.self) { try bad.validate() }
+        var document = BackupDocument(snapshot: original)
+        document.tasks[0].appearance = TaskAppearance(symbol: "unknown", tint: "unknown")
+        let decoded = try BackupDocument.decode(document.encode()).validatedSnapshot()
+        #expect(decoded.tasks[0].appearance == TaskAppearance())
+        let before = repo.writes
+        clock.advance(1); timer.tick()
+        #expect(repo.writes == before)
+    }
+
     @Test func appearanceRecurrenceAndUndoFeedback() throws {
         let (repo, _, timer, id) = try fixture()
         try timer.setRepeat(taskID: id, weekdays: Array(1...7))

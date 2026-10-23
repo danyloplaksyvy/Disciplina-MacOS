@@ -70,7 +70,7 @@ struct TaskRowView: View {
                 .accessibilityLabel("\(item.isCompleted ? "Reopen" : "Complete") \(item.title)")
                 .accessibilityIdentifier("toggle-\(item.id)")
             if let appearance = item.appearance, let symbol = appearance.symbol {
-                Image(systemName: symbol).foregroundStyle(selected ? rowColor : appearance.color).accessibilityLabel(symbol.replacingOccurrences(of: ".", with: " "))
+                Image(systemName: symbol).foregroundStyle(selected ? rowColor : appearance.color).accessibilityLabel(symbol.replacingOccurrences(of: ".", with: " ")).accessibilityIdentifier("task-symbol-\(item.id)")
             }
             if editing {
                 TextField("Task title", text: $draft).foregroundStyle(Color(nsColor: .textColor)).tint(Theme.accent).focused($editingFocused).onSubmit(save)

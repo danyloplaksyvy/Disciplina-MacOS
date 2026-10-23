@@ -327,6 +327,12 @@ final class TimerCoordinator {
         }
     }
     func editDailySession(taskID: UUID, sessionID: UUID, amounts: [UUID: Int64]) throws {
+        guard failure == nil else { throw DataError.timerUnavailable }
+        guard running?.taskID != taskID else { throw SessionEditError.running }
+        let state = try repository.snapshot()
+        guard let existing = state.sessions.first(where: { $0.id == sessionID && $0.taskID == taskID && $0.endedAt != nil }),
+              let allocations = existing.allocations, Set(amounts.keys) == Set(allocations.map(\.id)) else { throw SessionEditError.missing }
+        if allocations.allSatisfy({ amounts[$0.id] == $0.milliseconds }) { return }
         try changeSessions(taskID: taskID) { state, date in
             guard let i = state.sessions.firstIndex(where: { $0.id == sessionID && $0.taskID == taskID && $0.endedAt != nil }),
                   var values = state.sessions[i].allocations, Set(amounts.keys) == Set(values.map(\.id)) else { throw SessionEditError.missing }

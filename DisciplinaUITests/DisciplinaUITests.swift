@@ -206,6 +206,22 @@ final class DisciplinaUITests: XCTestCase {
         XCTAssertTrue(app.buttons["This Week"].exists)
     }
 
+    func testOptionalTaskAppearanceSavesAndCancels() {
+        add("Recognizable task")
+        let list = app.outlines["main-task-list"]
+        list.staticTexts["Recognizable task"].click()
+        clickDetailButton("Appearance…")
+        let sheet = app.windows["main"].sheets.firstMatch
+        sheet.popUpButtons["Symbol"].click(); app.menuItems["Book"].click()
+        sheet.buttons["Cancel"].click()
+        XCTAssertFalse(list.images.matching(NSPredicate(format: "identifier BEGINSWITH %@", "task-symbol-")).firstMatch.exists)
+        clickDetailButton("Appearance…")
+        sheet.popUpButtons["Symbol"].click(); app.menuItems["Book"].click()
+        sheet.popUpButtons["Color"].click(); app.menuItems["Blue"].click()
+        sheet.buttons["Save"].click()
+        XCTAssertTrue(list.images.matching(NSPredicate(format: "identifier BEGINSWITH %@", "task-symbol-")).firstMatch.waitForExistence(timeout: 5))
+    }
+
     func testPopoverUndoAndDismissedUndoRemainsAvailable() {
         add("Recover from popover")
         let list = app.outlines["main-task-list"]

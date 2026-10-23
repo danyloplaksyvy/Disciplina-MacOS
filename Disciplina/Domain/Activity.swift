@@ -21,12 +21,14 @@ struct TaskAppearance: Codable, Equatable, Sendable {
 extension WorkSession {
     func validateAllocation() throws {
         guard let allocations else { return }
+        guard legacyDay == nil else { throw DataError.invalidSnapshot }
         var keys = Set<String>(), ids = Set<UUID>(), sum: Int64 = 0
         for value in allocations {
             guard value.sessionID == id, value.milliseconds >= 0,
+                  (origin == .manual ? value.provenance != .measured : value.provenance != .manual),
                   TimeZone(identifier: value.timeZoneID) != nil, ids.insert(value.id).inserted,
                   keys.insert("\(value.day.year)-\(value.day.month)-\(value.day.day):\(value.timeZoneID)").inserted else { throw DataError.invalidSnapshot }
-            _ = try value.day.date()
+            _ = try value.day.date(calendar: LocalDay.calendar(timeZone: TimeZone(identifier: value.timeZoneID)!))
             let next = sum.addingReportingOverflow(value.milliseconds)
             guard !next.overflow else { throw DataError.invalidSnapshot }; sum = next.partialValue
         }
@@ -68,10 +70,10 @@ struct ActivitySummary {
     init(sessions: [WorkSession] = [], legacyCalendar: Calendar = LocalDay.calendar()) {
         for session in sessions {
             if let allocations = session.allocations {
-                for value in allocations {
+                for value in allocations where value.milliseconds > 0 {
                     days[value.day, default: []].append(Entry(id: value.id, sessionID: session.id, taskID: session.taskID, goalID: session.goalIDAtStart, startedAt: session.startedAt, milliseconds: value.milliseconds, provenance: value.provenance, legacy: false))
                 }
-            } else {
+            } else if session.accumulatedMilliseconds > 0 {
                 let day = session.legacyDay ?? LocalDay(session.startedAt, calendar: legacyCalendar)
                 days[day, default: []].append(Entry(id: session.id, sessionID: session.id, taskID: session.taskID, goalID: session.goalIDAtStart, startedAt: session.startedAt, milliseconds: session.accumulatedMilliseconds, provenance: session.origin == .manual ? .manual : nil, legacy: session.origin != .manual))
             }

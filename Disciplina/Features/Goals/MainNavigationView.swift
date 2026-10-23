@@ -34,18 +34,25 @@ struct MainNavigationView: View {
                             Spacer()
                         }.padding(.horizontal, 24).padding(.top, 8)
                     }
+                    if let notice = store.notice {
+                        HStack {
+                            Text(notice).font(.callout).foregroundStyle(.secondary)
+                            Spacer()
+                            Button { store.notice = nil } label: { Image(systemName: "xmark") }.buttonStyle(.plain).accessibilityLabel("Dismiss status message")
+                        }.padding(.horizontal, 24).padding(.top, 8)
+                    }
                     DeletionNoticeView(store: store).padding(.horizontal, 24)
                     // Keep both destinations mounted so drafts, selection, scroll and divider state survive navigation.
                     ZStack {
                         MainTaskWindowView(store: store, openSettings: openSettings)
                             .opacity(destination == .tasks ? 1 : 0).allowsHitTesting(destination == .tasks)
-                            .accessibilityHidden(destination != .tasks).disabled(destination != .tasks)
-                        ActivityView(store: store)
+                            .accessibilityHidden(destination != .tasks).disabled(destination != .tasks).zIndex(destination == .tasks ? 1 : 0)
+                        ActivityView(store: store, isVisible: destination == .activity)
                             .opacity(destination == .activity ? 1 : 0).allowsHitTesting(destination == .activity)
-                            .accessibilityHidden(destination != .activity).disabled(destination != .activity)
+                            .accessibilityHidden(destination != .activity).disabled(destination != .activity).zIndex(destination == .activity ? 1 : 0)
                         GoalsView(store: store)
                             .opacity(destination == .goals ? 1 : 0).allowsHitTesting(destination == .goals)
-                            .accessibilityHidden(destination != .goals).disabled(destination != .goals)
+                            .accessibilityHidden(destination != .goals).disabled(destination != .goals).zIndex(destination == .goals ? 1 : 0)
                     }
                 }.frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity)
             }.navigationSplitViewStyle(.balanced)

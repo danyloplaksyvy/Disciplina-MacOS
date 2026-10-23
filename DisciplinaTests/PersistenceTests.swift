@@ -55,7 +55,7 @@ struct PersistenceTests {
         try repo.delete(id: id)
         let reopened = try PersistenceController(url: url)
         #expect(try SwiftDataTaskRepository(context: reopened.container.mainContext).fetchAll().isEmpty)
-        #expect(TaskMigrationPlan.schemas.count == 5)
+        #expect(TaskMigrationPlan.schemas.count == 6)
     }
     @Test(arguments: [0, 2, 1000]) func migratesRealV1StoreAndKeepsOriginal(count: Int) throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
@@ -204,7 +204,7 @@ struct PersistenceTests {
         #expect(try Data(contentsOf: manifest) == bytes)
         let migrated = try location.open(), repo = SwiftDataTaskRepository(context: migrated.container.mainContext)
         #expect(try repo.snapshot() == TaskSnapshot(tasks: [task], sessions: [session], goals: [goal]))
-        let timer = TimerCoordinator(repository: repo)
+        let timer = TimerCoordinator(repository: repo, sample: { TimeSample(awake: 0, continuous: 0, date: date) })
         try timer.recover()
         #expect(try repo.snapshot().sessions[0].legacyDay != nil)
         #expect(try repo.snapshot().sessions[0].allocations == nil)
@@ -212,7 +212,9 @@ struct PersistenceTests {
         try timer.addSession(taskID: task.id, date: date, milliseconds: 5678)
         let current = try repo.snapshot()
         let restored = try location.restore(current, currentURL: migrated.url)
-        #expect(try SwiftDataTaskRepository(context: restored.container.mainContext).snapshot() == current)
+        let saved = try SwiftDataTaskRepository(context: restored.container.mainContext).snapshot()
+        #expect(saved.tasks == current.tasks && saved.goals == current.goals)
+        #expect(saved.sessions.sorted { $0.id.uuidString < $1.id.uuidString } == current.sessions.sorted { $0.id.uuidString < $1.id.uuidString })
         #expect(try old.mainContext.fetch(FetchDescriptor<TaskSchemaV5.SessionRecord>()).first?.item == session)
     }
 

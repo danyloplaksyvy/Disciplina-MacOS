@@ -127,7 +127,7 @@ final class AppDependencies {
     }
     private func observeAnnouncements(_ store: TaskStore) {
         withObservationTracking {
-            let message = store.timer.failure ?? store.errorMessage ?? store.notice
+            let message = store.timer.failure ?? store.errorMessage ?? store.deletionFeedback ?? store.notice
             if let message, message != lastAnnouncement {
                 NSAccessibility.post(element: NSApp!, notification: .announcementRequested,
                                      userInfo: [.announcement: message, .priority: NSAccessibilityPriorityLevel.medium.rawValue])
