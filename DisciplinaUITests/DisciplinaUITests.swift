@@ -175,6 +175,55 @@ final class DisciplinaUITests: XCTestCase {
         XCTAssertEqual(app.statusItems.count, 1)
     }
 
+    private func openActivity() {
+        let button = app.buttons["navigate-activity"].firstMatch
+        if button.exists && button.isHittable {
+            // Exercise the trailing empty area, not just the text or symbol.
+            button.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).click()
+        } else {
+            app.menuButtons["compact-navigation"].click(); app.menuItems["Activity"].click()
+        }
+        XCTAssertTrue(app.buttons["Today"].waitForExistence(timeout: 5))
+    }
+
+    func testActivityCalendarWeeklyReviewAndFullRowNavigation() {
+        add("Calendar work")
+        app.outlines["main-task-list"].staticTexts["Calendar work"].click()
+        clickDetailButton("Add time…")
+        let sheet = app.windows["main"].sheets.firstMatch
+        let minutes = sheet.textFields["duration-minutes"]
+        minutes.click(); minutes.typeKey("a", modifierFlags: .command); minutes.typeText("1")
+        sheet.buttons["Save"].click()
+        openActivity()
+        XCTAssertTrue(app.staticTexts["Manual or corrected"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["Calendar work"].firstMatch.exists)
+        app.buttons["Next month"].click(); app.buttons["Today"].click()
+        app.buttons["Calendar work"].firstMatch.click()
+        XCTAssertTrue(app.scrollViews["task-details"].waitForExistence(timeout: 5))
+        app.buttons["Back to Activity"].click()
+        app.segmentedControls.buttons["Weekly Review"].click()
+        XCTAssertTrue(app.staticTexts["Currently completed during this week"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["This Week"].exists)
+    }
+
+    func testPopoverUndoAndDismissedUndoRemainsAvailable() {
+        add("Recover from popover")
+        let list = app.outlines["main-task-list"]
+        list.staticTexts["Recover from popover"].rightClick()
+        app.windows["main"].menuItems["Delete"].click()
+        app.statusItems.firstMatch.click()
+        let popover = app.popovers.firstMatch
+        XCTAssertTrue(popover.buttons["Undo"].waitForExistence(timeout: 5))
+        popover.buttons["Undo"].click()
+        XCTAssertTrue(popover.staticTexts["Recover from popover"].waitForExistence(timeout: 5))
+        app.typeKey(.escape, modifierFlags: [])
+        list.staticTexts["Recover from popover"].rightClick()
+        app.windows["main"].menuItems["Delete"].click()
+        app.buttons["Dismiss deletion feedback"].click()
+        app.typeKey("z", modifierFlags: .command)
+        XCTAssertTrue(list.staticTexts["Recover from popover"].waitForExistence(timeout: 5))
+    }
+
     func testLoginLaunchHasStatusItemWithoutMainWindow() {
         app.terminate()
         app.launchArguments = ["--ui-testing", "--simulate-login-launch"]

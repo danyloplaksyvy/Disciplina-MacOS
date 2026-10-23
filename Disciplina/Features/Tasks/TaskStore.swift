@@ -4,6 +4,7 @@ import Observation
 @MainActor @Observable
 final class TaskStore {
     private(set) var structureRevision = 0
+    private(set) var calendarRevision = 0
     private var structure: [[UUID]] { [inProgress.map(\.id), todo.map(\.id), completed.map(\.id)] }
     let service: TaskService
     let timer: TimerCoordinator
@@ -240,6 +241,7 @@ final class TaskStore {
         mutate { try timer.changeSeries(id: id, weekdays: weekdays) }
     }
     func calendarChanged(now: Date = Date(), calendar: Calendar = LocalDay.calendar()) {
+        calendarRevision += 1
         groupingDate = now; groupingCalendar = calendar; rebuildDays()
         if !unavailable { _ = mutate { try timer.reconcileRecurrence() } }
     }

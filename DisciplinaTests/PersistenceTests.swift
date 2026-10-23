@@ -184,6 +184,38 @@ struct PersistenceTests {
         #expect(try location.open().url == migrated.url)
     }
 
+    @Test func migratesV5GoalsAndKeepsLegacySessionsUnallocated() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let location = try StoreLocation(root: root), original = try location.newURL()
+        let date = Date(timeIntervalSince1970: 1234)
+        let goal = Goal(id: UUID(), title: "Goal", successCriteria: "Done", createdAt: date, updatedAt: date)
+        let task = TodoItem(id: UUID(), title: "Legacy", createdAt: date, updatedAt: date, completedAt: nil, goalID: goal.id)
+        let session = WorkSession(id: UUID(), taskID: task.id, startedAt: date, endedAt: date, accumulatedMilliseconds: 1234, lastCheckpointAt: date, endReason: .paused, goalIDAtStart: goal.id)
+        let schema = Schema(versionedSchema: TaskSchemaV5.self)
+        let old = try ModelContainer(for: schema, configurations: [ModelConfiguration(schema: schema, url: original, cloudKitDatabase: .none)])
+        old.mainContext.autosaveEnabled = false
+        old.mainContext.insert(TaskSchemaV5.TaskRecord(task)); old.mainContext.insert(TaskSchemaV5.SessionRecord(session))
+        old.mainContext.insert(try TaskSchemaV5.GoalRecord(goal)); try old.mainContext.save()
+        let manifest = root.appendingPathComponent("Disciplina-store.json")
+        let bytes = try JSONSerialization.data(withJSONObject: ["directory": original.deletingLastPathComponent().lastPathComponent, "schemaVersion": 5])
+        try bytes.write(to: manifest)
+        #expect(throws: (any Error).self) { _ = try location.open { throw CocoaError(.fileWriteOutOfSpace) } }
+        #expect(try Data(contentsOf: manifest) == bytes)
+        let migrated = try location.open(), repo = SwiftDataTaskRepository(context: migrated.container.mainContext)
+        #expect(try repo.snapshot() == TaskSnapshot(tasks: [task], sessions: [session], goals: [goal]))
+        let timer = TimerCoordinator(repository: repo)
+        try timer.recover()
+        #expect(try repo.snapshot().sessions[0].legacyDay != nil)
+        #expect(try repo.snapshot().sessions[0].allocations == nil)
+        try timer.setAppearance(taskID: task.id, appearance: TaskAppearance(symbol: "book", tint: "Blue"))
+        try timer.addSession(taskID: task.id, date: date, milliseconds: 5678)
+        let current = try repo.snapshot()
+        let restored = try location.restore(current, currentURL: migrated.url)
+        #expect(try SwiftDataTaskRepository(context: restored.container.mainContext).snapshot() == current)
+        #expect(try old.mainContext.fetch(FetchDescriptor<TaskSchemaV5.SessionRecord>()).first?.item == session)
+    }
+
     @Test func goalsPersistRollbackAndRestoreTogether() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }

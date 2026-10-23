@@ -21,6 +21,7 @@ struct ActivityView: View {
     }
     private var entries: [ActivitySummary.Entry] { selectedDays.flatMap { store.activity.days[$0] ?? [] } }
     var body: some View {
+        let _ = store.calendarRevision
         VStack(alignment: .leading, spacing: 16) {
             HStack {
                 if taskID != nil || goalID != nil {
