@@ -69,6 +69,9 @@ struct TaskRowView: View {
             }.buttonStyle(.plain)
                 .accessibilityLabel("\(item.isCompleted ? "Reopen" : "Complete") \(item.title)")
                 .accessibilityIdentifier("toggle-\(item.id)")
+            if let appearance = item.appearance, let symbol = appearance.symbol {
+                Image(systemName: symbol).foregroundStyle(selected ? rowColor : appearance.color).accessibilityLabel(symbol.replacingOccurrences(of: ".", with: " "))
+            }
             if editing {
                 TextField("Task title", text: $draft).foregroundStyle(Color(nsColor: .textColor)).tint(Theme.accent).focused($editingFocused).onSubmit(save)
                     .onExitCommand { editing = false }.accessibilityIdentifier("edit-task")
@@ -131,6 +134,7 @@ struct TaskDetailsView: View {
     @State private var deleting: UUID?
     @State private var repeatEditor = false
     @State private var goalEditor = false
+    @State private var appearanceEditor = false
 
     var body: some View {
         ScrollView {
@@ -141,6 +145,7 @@ struct TaskDetailsView: View {
                         .accessibilityLabel("Close details").help("Close details")
                 }
                 Text(item.status.title)
+                Button("Appearance…") { appearanceEditor = true }.disabled(store.unavailable)
                 HStack {
                     Text("Goal: " + (store.goals.first { $0.id == item.goalID }?.title ?? "Unassigned")).lineLimit(2)
                     Spacer()
@@ -190,6 +195,7 @@ struct TaskDetailsView: View {
                 }
             }.padding().frame(maxWidth: .infinity, alignment: .leading)
         }.frame(minWidth: 300).accessibilityIdentifier("task-details")
+            .sheet(isPresented: $appearanceEditor) { AppearanceEditorView(item: item, store: store) }
             .sheet(isPresented: $goalEditor) { TaskGoalEditorView(store: store, task: item) }
             .sheet(isPresented: $repeatEditor) {
                 RepeatEditorView(weekdays: store.currentSeries(for: item)?.weekdays ?? []) { days in store.setRepeat(item.id, weekdays: days) }
@@ -232,7 +238,6 @@ struct MainTaskWindowView: View {
             }
             TaskInputView(store: store, focusToken: focusToken)
             StoreErrorView(store: store)
-            DeletionNoticeView(store: store)
             TaskDetailSplit(showsDetails: store.items.contains { $0.id == detailID }) {
                 List(selection: $selection) {
                     ForEach(store.dayGroups) { day in
@@ -317,6 +322,7 @@ struct MenuBarTaskView: View {
                 } }.animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: store.structureRevision)
             }.accessibilityIdentifier("popover-task-list")
             VStack(alignment: .leading, spacing: 8) {
+                DeletionNoticeView(store: store)
                 if let notice = store.notice { Text(notice).font(.caption).lineLimit(2) }
                 Divider()
                 HStack {

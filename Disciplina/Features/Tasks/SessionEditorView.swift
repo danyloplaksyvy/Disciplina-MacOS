@@ -12,20 +12,32 @@ struct SessionEditorView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var duration: SessionDuration
     @State private var date = Date()
+    @State private var daily: [SessionDuration]
     @State private var validationError: String?
     init(taskID: UUID, session: WorkSession?, store: TaskStore) {
         self.taskID = taskID; self.session = session; self.store = store
+        _daily = State(initialValue: (session?.allocations ?? []).map { SessionDuration(milliseconds: $0.milliseconds) })
         _duration = State(initialValue: SessionDuration(milliseconds: session?.accumulatedMilliseconds ?? 0))
     }
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text(session == nil ? "Add time" : "Edit duration").font(.headline)
             if session == nil { DatePicker("Work date", selection: $date) }
-            HStack {
+            if let values = session?.allocations, values.count > 1 {
+                ScrollView {
+                    ForEach(Array(values.enumerated()), id: \.element.id) { index, value in
+                        VStack(alignment: .leading) {
+                            Text(value.day.formatted + " · " + value.timeZoneID).font(.caption)
+                            HStack { field("Hours", text: $daily[index].hours); field("Minutes", text: $daily[index].minutes); field("Seconds", text: $daily[index].seconds) }
+                        }
+                    }
+                }.frame(maxHeight: 300)
+                Text("Total: " + dailyTotal).monospacedDigit()
+            } else { HStack {
                 field("Hours", text: $duration.hours)
                 field("Minutes", text: $duration.minutes)
                 field("Seconds", text: $duration.seconds)
-            }
+            } }
             Text(session == nil ? "This records a manually entered duration, not a measured interval." : "Recorded dates stay unchanged. The timer will remain paused.")
                 .font(.caption).foregroundStyle(.secondary)
             if let validationError { Text(validationError).foregroundStyle(.red).accessibilityIdentifier("duration-error") }
@@ -44,8 +56,21 @@ struct SessionEditorView: View {
                 .accessibilityIdentifier("duration-\(label.lowercased())")
         }
     }
+    private var dailyTotal: String {
+        do {
+            var total: Int64 = 0
+            for value in daily { let sum = total.addingReportingOverflow(try value.milliseconds()); guard !sum.overflow else { return "Invalid duration" }; total = sum.partialValue }
+            return DurationText.precise(total)
+        } catch { return "Invalid duration" }
+    }
     private func save() {
         do {
+            if let session, let values = session.allocations, values.count > 1 {
+                var amounts: [UUID: Int64] = [:]
+                for (i, value) in values.enumerated() { amounts[value.id] = daily[i] == SessionDuration(milliseconds: value.milliseconds) ? value.milliseconds : try daily[i].milliseconds() }
+                if store.editDailySession(taskID: taskID, sessionID: session.id, amounts: amounts) { dismiss() }
+                return
+            }
             let parsed = try duration.milliseconds()
             let saved: Bool
             if let session {

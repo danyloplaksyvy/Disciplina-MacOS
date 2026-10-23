@@ -188,7 +188,10 @@ final class AppDependencies {
             (NSWorkspace.shared.notificationCenter, NSWorkspace.didWakeNotification)]
         for (center, name) in events {
             let observer = center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
-                MainActor.assumeIsolated { self?.calendarEvent() }
+                MainActor.assumeIsolated {
+                    if name == .NSSystemTimeZoneDidChange || name == .NSSystemClockDidChange { self?.store?.timer.timeEnvironmentChanged() }
+                    self?.calendarEvent()
+                }
             }
             calendarObservers.append((center, observer))
         }
@@ -200,7 +203,10 @@ final class AppDependencies {
         let calendar = LocalDay.calendar()
         guard let next = calendar.dateInterval(of: .day, for: Date())?.end else { return }
         dayTimer = Timer(fire: next, interval: 0, repeats: false) { [weak self] _ in
-            MainActor.assumeIsolated { self?.calendarEvent() }
+            MainActor.assumeIsolated {
+                    if name == .NSSystemTimeZoneDidChange || name == .NSSystemClockDidChange { self?.store?.timer.timeEnvironmentChanged() }
+                    self?.calendarEvent()
+                }
         }
         if let dayTimer { RunLoop.main.add(dayTimer, forMode: .common) }
     }

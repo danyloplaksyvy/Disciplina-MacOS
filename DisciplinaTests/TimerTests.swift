@@ -60,13 +60,13 @@ import Testing
         clock.advance(2); try timer.pause()
         #expect(repo.sessions[0].accumulatedMilliseconds == 7000)
     }
-    @Test func wallClockChangesDoNotChangeDuration() throws {
+    @Test func wallClockChangesInterruptAtTrustedCheckpoint() throws {
         let (repo, clock, timer, a, _) = try fixture()
         try timer.start(taskID: a)
         clock.advance(5); clock.date += 36000; timer.tick()
         clock.advance(3); clock.date -= 72000; try timer.pause()
-        #expect(repo.sessions[0].accumulatedMilliseconds == 8000)
-        #expect(repo.sessions[0].endedAt! < repo.sessions[0].startedAt)
+        #expect(repo.sessions[0].accumulatedMilliseconds == 0)
+        #expect(repo.sessions[0].endReason == .interrupted && timer.running == nil)
     }
     @Test func missedSleepAndWatchdogDiscardUntrustedTime() throws {
         for sleeping in [true, false] {

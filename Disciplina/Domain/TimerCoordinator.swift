@@ -28,6 +28,7 @@ final class TimerCoordinator {
     private let makeID: () -> UUID
     private let calendar: () -> Calendar
     private var trusted: TimeSample?
+    private var trustedCalendar: Calendar?
     private(set) var running: WorkSession?
     private(set) var elapsedMilliseconds: Int64 = 0
     private(set) var failure: String?
@@ -43,14 +44,29 @@ final class TimerCoordinator {
         self.calendar = calendar
     }
 
+    var pendingActivity: [LocalDay: Int64] {
+        guard failure == nil, let running, let trusted, let trustedCalendar else { return [:] }
+        let delta = max(0, elapsedMilliseconds - running.accumulatedMilliseconds)
+        var overlay = running; overlay.allocations = []
+        do { try overlay.allocate(milliseconds: delta, from: trusted.date, calendar: trustedCalendar, makeID: { running.id }) }
+        catch { return [:] }
+        var days: [LocalDay: Int64] = [:]
+        for value in overlay.allocations ?? [] { days[value.day, default: 0] += value.milliseconds }
+        return days
+    }
+
     func recover() throws {
         do {
         var state = try repository.snapshot()
         try state.validate()
+        let before = state
+        for i in state.sessions.indices where state.sessions[i].allocations == nil && state.sessions[i].legacyDay == nil {
+            state.sessions[i].legacyDay = LocalDay(state.sessions[i].startedAt, calendar: calendar())
+        }
         if state.sessions.contains(where: { $0.endedAt == nil }) {
             state.closeInterrupted()
-            try repository.commit(state)
         }
+        if state != before { try repository.commit(state) }
         running = nil; trusted = nil; elapsedMilliseconds = 0; failure = nil
         } catch { freeze(error); throw error }
     }
@@ -60,7 +76,7 @@ final class TimerCoordinator {
         let awake = now.awake - trusted.awake
         let continuous = now.continuous - trusted.continuous
         guard awake >= 0, continuous >= 0, continuous <= watchdogSeconds,
-              continuous - awake < 1 else { throw DataError.timerUnavailable }
+              continuous - awake < 1, abs(now.date.timeIntervalSince(trusted.date) - awake) <= 1 else { throw DataError.timerUnavailable }
         let delta = awake * 1000
         guard delta.isFinite, delta < Double(Int64.max) else { throw DataError.invalidSnapshot }
         let sum = running.accumulatedMilliseconds.addingReportingOverflow(Int64(delta))
@@ -98,14 +114,27 @@ final class TimerCoordinator {
         onCommit?()
     }
 
+    private func accrue(_ session: inout WorkSession, at now: TimeSample) throws {
+        let total = try duration(at: now)
+        guard let trusted, let trustedCalendar else { throw DataError.timerUnavailable }
+        // A changed zone without an observed boundary cannot safely assign this interval.
+        guard trustedCalendar.timeZone == calendar().timeZone else { throw DataError.timerUnavailable }
+        try session.allocate(milliseconds: total - session.accumulatedMilliseconds, from: trusted.date, calendar: trustedCalendar, makeID: makeID)
+        session.accumulatedMilliseconds = total
+    }
+    func timeEnvironmentChanged() {
+        guard running != nil else { return }
+        do { try interrupt() } catch { freeze(error) }
+    }
+
     private func checkpoint(at now: TimeSample) throws {
         guard let running else { return }
         var state = try repository.snapshot()
         guard let index = state.sessions.firstIndex(where: { $0.id == running.id }) else { throw DataError.invalidSnapshot }
-        state.sessions[index].accumulatedMilliseconds = try duration(at: now)
+        try accrue(&state.sessions[index], at: now)
         state.sessions[index].lastCheckpointAt = now.date
         try repository.commit(state)
-        self.running = state.sessions[index]; trusted = now
+        self.running = state.sessions[index]; trusted = now; trustedCalendar = calendar()
     }
 
     /// Includes closure of the current interval in the same transaction as the command.
@@ -115,7 +144,7 @@ final class TimerCoordinator {
         var state = try repository.snapshot()
         if let running, let index = state.sessions.firstIndex(where: { $0.id == running.id }) {
             do {
-                state.sessions[index].accumulatedMilliseconds = try duration(at: now)
+                try accrue(&state.sessions[index], at: now)
                 state.sessions[index].lastCheckpointAt = now.date
                 state.sessions[index].endedAt = now.date
                 state.sessions[index].endReason = reason
@@ -133,6 +162,7 @@ final class TimerCoordinator {
         try repository.commit(state)
         running = nextID.flatMap { id in state.sessions.first { $0.id == id } }
         trusted = running == nil ? nil : now
+        trustedCalendar = running == nil ? nil : calendar()
         elapsedMilliseconds = running?.accumulatedMilliseconds ?? 0
     }
 
@@ -144,7 +174,7 @@ final class TimerCoordinator {
             state.tasks[index].status = .inProgress
             state.tasks[index].updatedAt = now.date
             let id = makeID()
-            state.sessions.append(WorkSession(id: id, taskID: taskID, startedAt: now.date, lastCheckpointAt: now.date, goalIDAtStart: state.tasks[index].goalID))
+            state.sessions.append(WorkSession(id: id, taskID: taskID, startedAt: now.date, lastCheckpointAt: now.date, goalIDAtStart: state.tasks[index].goalID, allocations: []))
             return id
         }
     }
@@ -229,7 +259,7 @@ final class TimerCoordinator {
             state.detachTask(at: t)
             let id = makeID()
             state.tasks[t].seriesID = id
-            state.series.append(RecurrenceSeries(id: id, title: state.tasks[t].title, weekdays: weekdays.sorted(), currentTaskID: taskID, revision: makeID(), futureGoalID: state.tasks[t].goalID))
+            state.series.append(RecurrenceSeries(id: id, title: state.tasks[t].title, weekdays: weekdays.sorted(), currentTaskID: taskID, revision: makeID(), futureGoalID: state.tasks[t].goalID, futureAppearance: state.tasks[t].appearance))
         }
         state.tasks[t].updatedAt = sample().date
         try state.validate(); try repository.commit(state)
@@ -272,8 +302,10 @@ final class TimerCoordinator {
     func addSession(taskID: UUID, date: Date, milliseconds: Int64) throws {
         guard milliseconds > 0, date.timeIntervalSince1970.isFinite else { throw SessionEditError.invalidDuration }
         try changeSessions(taskID: taskID) { state, _ in
-            state.sessions.append(WorkSession(id: makeID(), taskID: taskID, startedAt: date, endedAt: date,
-                accumulatedMilliseconds: milliseconds, lastCheckpointAt: date, endReason: .manuallyAdded, origin: .manual, goalIDAtStart: state.tasks.first { $0.id == taskID }?.goalID))
+            let id = makeID(), cal = calendar()
+            let allocation = DailyAllocation(id: makeID(), sessionID: id, day: LocalDay(date, calendar: cal), timeZoneID: cal.timeZone.identifier, milliseconds: milliseconds, provenance: .manual)
+            state.sessions.append(WorkSession(id: id, taskID: taskID, startedAt: date, endedAt: date,
+                accumulatedMilliseconds: milliseconds, lastCheckpointAt: date, endReason: .manuallyAdded, origin: .manual, goalIDAtStart: state.tasks.first { $0.id == taskID }?.goalID, allocations: [allocation]))
         }
     }
     func editSession(taskID: UUID, sessionID: UUID, milliseconds: Int64) throws {
@@ -283,10 +315,45 @@ final class TimerCoordinator {
         if existing.accumulatedMilliseconds == milliseconds { return }
         try changeSessions(taskID: taskID) { state, date in
             guard let index = state.sessions.firstIndex(where: { $0.id == sessionID && $0.taskID == taskID && $0.endedAt != nil }) else { throw SessionEditError.missing }
+            if let values = state.sessions[index].allocations {
+                guard values.count <= 1 else { throw SessionEditError.invalidDuration }
+                if values.isEmpty {
+                    let cal = self.calendar()
+                    state.sessions[index].allocations = [DailyAllocation(id: self.makeID(), sessionID: sessionID, day: LocalDay(existing.startedAt, calendar: cal), timeZoneID: cal.timeZone.identifier, milliseconds: milliseconds, provenance: .corrected)]
+                } else { state.sessions[index].allocations![0].milliseconds = milliseconds; state.sessions[index].allocations![0].provenance = .corrected }
+            }
             state.sessions[index].accumulatedMilliseconds = milliseconds
             state.sessions[index].durationEditedAt = date
         }
     }
+    func editDailySession(taskID: UUID, sessionID: UUID, amounts: [UUID: Int64]) throws {
+        try changeSessions(taskID: taskID) { state, date in
+            guard let i = state.sessions.firstIndex(where: { $0.id == sessionID && $0.taskID == taskID && $0.endedAt != nil }),
+                  var values = state.sessions[i].allocations, Set(amounts.keys) == Set(values.map(\.id)) else { throw SessionEditError.missing }
+            var total: Int64 = 0, changed = false
+            for j in values.indices {
+                let value = amounts[values[j].id]!
+                let sum = total.addingReportingOverflow(value)
+                guard value >= 0, !sum.overflow else { throw SessionEditError.invalidDuration }; total = sum.partialValue
+                if value != values[j].milliseconds { values[j].milliseconds = value; values[j].provenance = .corrected; changed = true }
+            }
+            guard changed else { return }
+            state.sessions[i].allocations = values; state.sessions[i].accumulatedMilliseconds = total; state.sessions[i].durationEditedAt = date
+        }
+    }
+    func setAppearance(taskID: UUID, appearance: TaskAppearance?) throws {
+        guard failure == nil else { throw DataError.timerUnavailable }
+        var state = try repository.snapshot()
+        guard let i = state.tasks.firstIndex(where: { $0.id == taskID && $0.deletedAt == nil }) else { throw TaskError.notFound }
+        let value = appearance?.normalized
+        guard state.tasks[i].appearance != value else { return }
+        state.tasks[i].appearance = value; state.tasks[i].updatedAt = sample().date
+        if let s = state.series.firstIndex(where: { $0.currentTaskID == taskID && $0.enabled }) {
+            state.series[s].futureAppearance = value; state.series[s].revision = makeID()
+        }
+        try repository.commit(state)
+    }
+
     func deleteSession(taskID: UUID, sessionID: UUID) throws {
         try changeSessions(taskID: taskID) { state, _ in
             guard state.sessions.contains(where: { $0.id == sessionID && $0.taskID == taskID && $0.endedAt != nil }) else { throw SessionEditError.missing }

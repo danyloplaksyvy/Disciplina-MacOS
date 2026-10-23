@@ -43,9 +43,21 @@ final class TaskStore {
     private var groupingDate = Date()
     private var groupingCalendar = LocalDay.calendar()
     private(set) var sessions: [WorkSession] = []
+    private(set) var activity = ActivitySummary()
     private(set) var deleted: [TodoItem] = []
     private(set) var deletedIDs: [UUID] = []
     var notice: String?
+    var deletionFeedback: String?
+    private var undoTitles: [UUID: String] = [:]
+    var undoActionName: String {
+        guard let entry = deletionUndo.last else { return "Undo" }
+        switch entry { case .task: return "Undo Delete Task"; case .milestone: return "Undo Delete Milestone" }
+    }
+    var undoItemTitle: String? {
+        guard let entry = deletionUndo.last else { return nil }
+        switch entry { case .task(let id): return undoTitles[id] ?? deleted.first { $0.id == id }?.title ?? "Task"
+        case .milestone(let value): return value.title }
+    }
     var unavailable: Bool { needsRefresh || timer.failure != nil }
     var featured: TodoItem? {
         if let id = timer.running?.taskID { return items.first { $0.id == id } }
@@ -84,6 +96,7 @@ final class TaskStore {
         if sessions != snapshot.sessions || milestones != snapshot.milestones {
             goalProgress = GoalProgressService(milestones: snapshot.milestones, sessions: snapshot.sessions)
         }
+        if sessions != snapshot.sessions { activity = ActivitySummary(sessions: snapshot.sessions) }
         goals = snapshot.goals
         milestones = snapshot.milestones
         sessions = snapshot.sessions
@@ -137,12 +150,13 @@ final class TaskStore {
         mutate { try timer.setStatus(id: id, status: isCompleted ? .completed : .todo) }
     }
     @discardableResult func delete(id: UUID, disposition: RecurringDeletion = .stop) -> Bool {
+        let title = items.first { $0.id == id }?.title ?? "Task"
         var ticket: (RecurrenceSeries, UUID)?
         let saved = mutate {
             ticket = try timer.delete(id: id, disposition: disposition)
         }
         if let ticket { deletionSeries[id] = ticket }
-        if saved { deletedIDs.append(id); deletionUndo.append(.task(id)); notice = "Task moved to Recently Deleted." }
+        if saved { deletedIDs.append(id); deletionUndo.append(.task(id)); undoTitles[id] = title; deletionFeedback = "Deleted “\(title)”" }
         return saved
     }
     @discardableResult func start(_ id: UUID) -> Bool {
@@ -188,9 +202,11 @@ final class TaskStore {
     func undoDelete() {
         guard let entry = deletionUndo.last else { return }
         switch entry {
-        case .task(let id): _ = restore(id, undo: true)
+        case .task(let id):
+            let title = undoItemTitle ?? "Task"
+            if restore(id, undo: true) { deletionFeedback = "Restored “\(title)”" }
         case .milestone(let value):
-            if mutate({ try goalService.restoreMilestone(value) }) { deletionUndo.removeLast(); notice = "Milestone restored." }
+            if mutate({ try goalService.restoreMilestone(value) }) { deletionUndo.removeLast(); deletionFeedback = "Restored “\(value.title)”" }
         }
     }
     @discardableResult func permanentlyDelete(_ id: UUID) -> Bool {
@@ -252,11 +268,17 @@ final class TaskStore {
     @discardableResult func deleteMilestone(_ id: UUID) -> Bool {
         var deleted: Milestone?
         let saved = mutate { deleted = try goalService.deleteMilestone(id) }
-        if saved, let deleted { deletionUndo.append(.milestone(deleted)); notice = "Milestone deleted." }
+        if saved, let deleted { deletionUndo.append(.milestone(deleted)); deletionFeedback = "Deleted “\(deleted.title)”" }
         return saved
     }
     @discardableResult func assignGoal(taskID: UUID, goalID: UUID?) -> Bool {
         mutate { try timer.assignGoal(taskID: taskID, goalID: goalID) }
+    }
+    @discardableResult func setAppearance(taskID: UUID, appearance: TaskAppearance?) -> Bool {
+        mutate { try timer.setAppearance(taskID: taskID, appearance: appearance) }
+    }
+    @discardableResult func editDailySession(taskID: UUID, sessionID: UUID, amounts: [UUID: Int64]) -> Bool {
+        mutate { try timer.editDailySession(taskID: taskID, sessionID: sessionID, amounts: amounts) }
     }
     func prepareGoalAssignment(taskID: UUID) -> Bool { prepareSessionEditor(taskID: taskID) }
 

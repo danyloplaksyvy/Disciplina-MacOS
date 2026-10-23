@@ -66,7 +66,7 @@ struct RecurrenceTests {
         let timer = TimerCoordinator(repository: repo, sample: { TimeSample(awake: seconds, continuous: seconds, date: now) }, calendar: { calendar })
         try timer.setRepeat(taskID: item.id, weekdays: [2, 4, 6])
         try timer.start(taskID: item.id)
-        seconds = 3
+        seconds = 3; now = now.addingTimeInterval(3)
         let original = try repo.snapshot()
         repo.failWrite = true
         #expect(throws: (any Error).self) { try timer.setStatus(id: item.id, status: .completed) }
