@@ -6,6 +6,24 @@
 
 Development host: Apple Silicon macOS, Command Line Tools with Swift 6.3.2, no full Xcode. The initial SwiftUI shell compiled and opened locally. Full app compilation requires missing SwiftUI/SwiftData macro plugins; GitHub Actions supplies Xcode.
 
+## v1.1.0 verification — October 23, 2026
+
+- Local Command Line Tools: **54 domain/store tests passed**. Coverage includes goal validation/lifecycle, milestone ordering and deletion Undo, running-task reassignment and failure recovery, immutable timer/manual attribution, recurrence inheritance, duration overflow, and a 100-goal/10,000-task fixture with no persistence writes on visual ticks.
+- Final application/test source `4ac851edc14abb4b904fac663e5fce3af7ead886` passed [GitHub Actions run 39913241870](https://github.com/danyloplaksyvy/Disciplina-MacOS/actions/runs/39913241870): **66 unit/persistence tests and 22 UI tests in each appearance**, with zero failures. Native coverage includes goal/milestone lifecycle and Undo, task assignment and pause confirmation, attributed work, navigation state, and existing capture/popover/login/timer/recurrence regressions.
+- The 100-goal/10,000-task UI scenario passed in both appearances, including opening a goal, starting/pausing a linked task and returning to Tasks. Total automated scenario duration was 80 seconds dark / 88 seconds light, including fixture setup and accessibility queries; these are not input-latency measurements. An earlier light run timed out retrieving the accessibility tree. Targeted first-match queries resolved that test timeout without reducing fixture size or changing application behavior.
+- Migration tests cover V1–V4 to V5, WAL snapshots, preserved records, failed activation and JSON 1–4 compatibility. A private consistent copy of the installed V4 database also passed migration with the packaged app: **16 tasks, 17 sessions**. The original store was untouched; no personal records were committed or uploaded.
+- The development archive at `build/v1.1.0/Disciplina-arm64-development.zip` passed `codesign --verify --deep --strict`; metadata is **1.1.0, build 5**, arm64. Its recorded PR merge source is `b0e9f20353896e418b654297c8e7cf6289aef171`, corresponding to application commit `87ece351c16641425a8b0dd8f84652b657a8712d`. The subsequent commit changes UI queries only. SHA-256: `0180915a985b4f03dc91ee830030c32bdb696e4592e7b06aca3941fdf09bf689`.
+- Native inspection checked compact Tasks/Goals navigation and identified an empty-state alignment problem, corrected in the packaged source. CI screenshots inspected earlier show readable goal details, milestone progress and attributed work. Full device layout/appearance acceptance remains pending.
+
+### Remaining device checks
+
+- [ ] Real login, macOS 14 runtime/migration, secondary monitors and other Spaces.
+- [ ] Physical sleep/wake, native capture focus matrix and warm capture latency.
+- [ ] VoiceOver, increased contrast, Reduce Motion and inactive-window selection.
+- [ ] Minimum/default/maximized navigation sizing, divider preservation and native file-dialog export/restore on the installed app.
+
+Version **1.1.0**, build **5** remains a development build pending device acceptance.
+
 ## v1.0.3 verification — October 21, 2026
 
 - Local Command Line Tools: **44 domain/store tests passed**. Recurrence coverage includes incomplete tasks spanning days, one late successor, repeated completion/checks, atomic timer-completion failure, restart, rename, schedule changes, skip/stop, guarded deletion Undo, independent restoration, historical reopening, post-commit refresh failure, JSON 1/2 compatibility and format 3 round-trip. Calendar coverage includes DST, midnight, time-zone regrouping and year boundaries.
