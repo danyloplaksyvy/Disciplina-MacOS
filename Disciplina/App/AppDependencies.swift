@@ -127,7 +127,7 @@ final class AppDependencies {
     }
     private func observeAnnouncements(_ store: TaskStore) {
         withObservationTracking {
-            let message = store.timer.failure ?? store.errorMessage ?? store.notice
+            let message = store.timer.failure ?? store.errorMessage ?? store.deletionFeedback ?? store.notice
             if let message, message != lastAnnouncement {
                 NSAccessibility.post(element: NSApp!, notification: .announcementRequested,
                                      userInfo: [.announcement: message, .priority: NSAccessibilityPriorityLevel.medium.rawValue])
@@ -185,10 +185,14 @@ final class AppDependencies {
             (.default, NSApplication.didBecomeActiveNotification),
             (.default, .NSSystemTimeZoneDidChange),
             (.default, .NSSystemClockDidChange),
+            (.default, NSLocale.currentLocaleDidChangeNotification),
             (NSWorkspace.shared.notificationCenter, NSWorkspace.didWakeNotification)]
         for (center, name) in events {
             let observer = center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
-                MainActor.assumeIsolated { self?.calendarEvent() }
+                MainActor.assumeIsolated {
+                    if name == .NSSystemTimeZoneDidChange || name == .NSSystemClockDidChange { self?.store?.timer.timeEnvironmentChanged() }
+                    self?.calendarEvent()
+                }
             }
             calendarObservers.append((center, observer))
         }

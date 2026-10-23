@@ -47,7 +47,7 @@ final class StoreLocation {
     func publish(_ url: URL) throws {
         let directory = url.deletingLastPathComponent().lastPathComponent
         guard UUID(uuidString: directory) != nil else { throw DataError.invalidSnapshot }
-        try JSONEncoder().encode(Manifest(directory: directory, schemaVersion: 5)).write(to: manifest, options: .atomic)
+        try JSONEncoder().encode(Manifest(directory: directory, schemaVersion: 6)).write(to: manifest, options: .atomic)
     }
     func newURL() throws -> URL {
         let directory = root.appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -67,17 +67,18 @@ final class StoreLocation {
             guard UUID(uuidString: value.directory) != nil else { throw DataError.invalidSnapshot }
             let url = root.appendingPathComponent(value.directory).appendingPathComponent("default.store")
             guard FileManager.default.fileExists(atPath: url.path) else { throw CocoaError(.fileNoSuchFile) }
-            if value.schemaVersion == 5 {
+            if value.schemaVersion == 6 {
                 let persistence = try PersistenceController(url: url)
                 try SwiftDataTaskRepository(context: persistence.container.mainContext).snapshot().validate()
                 return persistence
             }
-            guard value.schemaVersion == nil || value.schemaVersion == 2 || value.schemaVersion == 3 || value.schemaVersion == 4 else { throw DataError.unsupportedVersion }
+            guard value.schemaVersion == nil || value.schemaVersion == 2 || value.schemaVersion == 3 || value.schemaVersion == 4 || value.schemaVersion == 5 else { throw DataError.unsupportedVersion }
             let backup = try backup(url)
             let inspection = try newURL()
             try DatabaseBackup.copy(from: backup, to: inspection)
             let expected: TaskSnapshot
             switch value.schemaVersion {
+            case 5: expected = try readV5(inspection)
             case 4: expected = try readV4(inspection)
             case 3: expected = try readV3(inspection)
             default: expected = try readV2(inspection)
@@ -137,7 +138,7 @@ final class StoreLocation {
 
     private func verify(_ actual: TaskSnapshot, matches expected: TaskSnapshot) throws {
         try actual.validate()
-        guard actual.goals == expected.goals, actual.milestones == expected.milestones,
+        guard actual.goals.sorted(by: { $0.id.uuidString < $1.id.uuidString }) == expected.goals.sorted(by: { $0.id.uuidString < $1.id.uuidString }), actual.milestones.sorted(by: { $0.id.uuidString < $1.id.uuidString }) == expected.milestones.sorted(by: { $0.id.uuidString < $1.id.uuidString }),
               actual.series.sorted(by: { $0.id.uuidString < $1.id.uuidString }) == expected.series.sorted(by: { $0.id.uuidString < $1.id.uuidString }),
               actual.tasks.sorted(by: { $0.id.uuidString < $1.id.uuidString }) == expected.tasks.sorted(by: { $0.id.uuidString < $1.id.uuidString }),
               actual.sessions.sorted(by: { $0.id.uuidString < $1.id.uuidString }) == expected.sessions.sorted(by: { $0.id.uuidString < $1.id.uuidString }) else { throw DataError.invalidSnapshot }
@@ -181,6 +182,22 @@ final class StoreLocation {
         for task in tasks { if let data = task.scheduledDayData { _ = try JSONDecoder().decode(LocalDay.self, from: data) } }
         let series = try container.mainContext.fetch(FetchDescriptor<TaskSchemaV4.SeriesRecord>()).map { try $0.value() }
         let state = TaskSnapshot(tasks: tasks.map(\.item), sessions: sessions.map(\.item), series: series)
+        try state.validate()
+        return state
+    }
+
+    private func readV5(_ url: URL) throws -> TaskSnapshot {
+        let schema = Schema(versionedSchema: TaskSchemaV5.self)
+        let configuration = ModelConfiguration(schema: schema, url: url, cloudKitDatabase: .none)
+        let container = try ModelContainer(for: schema, configurations: [configuration])
+        let tasks = try container.mainContext.fetch(FetchDescriptor<TaskSchemaV5.TaskRecord>())
+        let sessions = try container.mainContext.fetch(FetchDescriptor<TaskSchemaV5.SessionRecord>())
+        guard sessions.allSatisfy({ SessionOrigin(rawValue: $0.originRaw) != nil }),
+              tasks.allSatisfy({ TaskStatus(rawValue: $0.statusRaw) != nil }),
+              sessions.allSatisfy({ $0.endReasonRaw == nil || SessionEndReason(rawValue: $0.endReasonRaw!) != nil }) else { throw DataError.invalidSnapshot }
+        for task in tasks { if let data = task.scheduledDayData { _ = try JSONDecoder().decode(LocalDay.self, from: data) } }
+        let series = try container.mainContext.fetch(FetchDescriptor<TaskSchemaV5.SeriesRecord>()).map { try $0.value() }
+        let state = TaskSnapshot(tasks: tasks.map(\.item), sessions: sessions.map(\.item), series: series, goals: try container.mainContext.fetch(FetchDescriptor<TaskSchemaV5.GoalRecord>()).map { try $0.value() }, milestones: try container.mainContext.fetch(FetchDescriptor<TaskSchemaV5.MilestoneRecord>()).map { try $0.value() })
         try state.validate()
         return state
     }

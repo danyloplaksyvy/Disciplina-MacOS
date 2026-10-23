@@ -3,13 +3,21 @@ import SwiftUI
 struct DeletionNoticeView: View {
     let store: TaskStore
     var body: some View {
-        if let notice = store.notice {
-            HStack {
-                Text(notice).font(.callout)
-                if store.canUndoDeletion { Button("Undo") { store.undoDelete() } }
-                Spacer()
-                Button("Dismiss") { store.notice = nil }
-            }
+        if let message = store.deletionFeedback {
+            HStack(spacing: 10) {
+                Image(systemName: "arrow.uturn.backward.circle")
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(message).font(.callout).lineLimit(2)
+                    if store.canUndoDeletion, let title = store.undoItemTitle {
+                        Text("Undo deletion of “\(title)”").font(.caption).foregroundStyle(.secondary).lineLimit(1).help(title)
+                    }
+                }
+                Spacer(minLength: 4)
+                if store.canUndoDeletion { Button("Undo") { store.undoDelete() }.help(store.undoActionName) }
+                Button { store.deletionFeedback = nil } label: { Image(systemName: "xmark") }
+                    .buttonStyle(.plain).accessibilityLabel("Dismiss deletion feedback")
+            }.padding(10).background(.quaternary, in: RoundedRectangle(cornerRadius: 8))
+                .accessibilityIdentifier("deletion-action-bar")
         }
     }
 }
@@ -37,7 +45,6 @@ struct GoalsView: View {
                 Button("New Goal") { editor = GoalEditorRequest() }.disabled(store.unavailable)
             }
             StoreErrorView(store: store)
-            DeletionNoticeView(store: store)
             if let id = selectedGoal, let goal = store.goals.first(where: { $0.id == id }) {
                 if let taskID = selectedTask, let task = store.items.first(where: { $0.id == taskID }) {
                     TaskDetailsView(item: task, store: store, close: { selectedTask = nil }).id(taskID)

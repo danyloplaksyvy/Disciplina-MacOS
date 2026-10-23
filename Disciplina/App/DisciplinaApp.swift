@@ -11,7 +11,7 @@ struct DisciplinaApp: App {
         Settings { SettingsView(dependencies: dependencies) }
         .commands {
             CommandGroup(replacing: .undoRedo) {
-                Button("Undo") {
+                Button((NSApp.keyWindow?.firstResponder as? NSTextView)?.isEditable == true ? "Undo" : (dependencies.store?.undoActionName ?? "Undo")) {
                     if let editor = NSApp.keyWindow?.firstResponder as? NSTextView, editor.isEditable {
                         editor.undoManager?.undo()
                     } else { dependencies.store?.undoDelete() }

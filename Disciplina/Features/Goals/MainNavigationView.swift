@@ -3,7 +3,7 @@ import SwiftUI
 struct MainNavigationView: View {
     let store: TaskStore
     let openSettings: () -> Void
-    private enum Destination: String, CaseIterable { case tasks = "Tasks", goals = "Goals" }
+    private enum Destination: String, CaseIterable { case tasks = "Tasks", goals = "Goals", activity = "Activity" }
     @State private var destination: Destination = .tasks
     @State private var visibility: NavigationSplitViewVisibility = .all
     @State private var manuallyHidden = false
@@ -13,13 +13,13 @@ struct MainNavigationView: View {
                 List {
                     ForEach(Destination.allCases, id: \.self) { value in
                         Button { navigate(value) } label: {
-                            Label(value.rawValue, systemImage: value == .tasks ? "checklist" : "target")
-                                .frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 5)
+                            Label(value.rawValue, systemImage: value == .tasks ? "checklist" : value == .goals ? "target" : "calendar")
+                                .frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 5).contentShape(Rectangle())
                         }.buttonStyle(.plain).listRowBackground(destination == value ? Theme.accent.opacity(0.16) : Color.clear)
                             .accessibilityIdentifier("navigate-\(value.rawValue.lowercased())")
                             .accessibilityAddTraits(destination == value ? .isSelected : [])
                     }
-                    Button(action: openSettings) { Label("Settings", systemImage: "gearshape") }.buttonStyle(.plain)
+                    Button(action: openSettings) { Label("Settings", systemImage: "gearshape").frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 5).contentShape(Rectangle()) }.buttonStyle(.plain)
                 }.navigationSplitViewColumnWidth(min: 200, ideal: 220, max: 220)
             } detail: {
                 VStack(spacing: 0) {
@@ -28,19 +28,31 @@ struct MainNavigationView: View {
                             Menu(destination.rawValue) {
                                 Button("Tasks") { navigate(.tasks) }
                                 Button("Goals") { navigate(.goals) }
+                                Button("Activity") { navigate(.activity) }
                                 Divider(); Button("Settings", action: openSettings)
                             }.accessibilityIdentifier("compact-navigation")
                             Spacer()
                         }.padding(.horizontal, 24).padding(.top, 8)
                     }
+                    if let notice = store.notice {
+                        HStack {
+                            Text(notice).font(.callout).foregroundStyle(.secondary)
+                            Spacer()
+                            Button { store.notice = nil } label: { Image(systemName: "xmark") }.buttonStyle(.plain).accessibilityLabel("Dismiss status message")
+                        }.padding(.horizontal, 24).padding(.top, 8)
+                    }
+                    DeletionNoticeView(store: store).padding(.horizontal, 24)
                     // Keep both destinations mounted so drafts, selection, scroll and divider state survive navigation.
                     ZStack {
                         MainTaskWindowView(store: store, openSettings: openSettings)
                             .opacity(destination == .tasks ? 1 : 0).allowsHitTesting(destination == .tasks)
-                            .accessibilityHidden(destination != .tasks).disabled(destination != .tasks)
+                            .accessibilityHidden(destination != .tasks).disabled(destination != .tasks).zIndex(destination == .tasks ? 1 : 0)
+                        ActivityView(store: store, isVisible: destination == .activity)
+                            .opacity(destination == .activity ? 1 : 0).allowsHitTesting(destination == .activity)
+                            .accessibilityHidden(destination != .activity).disabled(destination != .activity).zIndex(destination == .activity ? 1 : 0)
                         GoalsView(store: store)
                             .opacity(destination == .goals ? 1 : 0).allowsHitTesting(destination == .goals)
-                            .accessibilityHidden(destination != .goals).disabled(destination != .goals)
+                            .accessibilityHidden(destination != .goals).disabled(destination != .goals).zIndex(destination == .goals ? 1 : 0)
                     }
                 }.frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity)
             }.navigationSplitViewStyle(.balanced)

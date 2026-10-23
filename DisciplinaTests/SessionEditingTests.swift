@@ -102,7 +102,7 @@ import Testing
         try timer.editSession(taskID: a, sessionID: repo.sessions[1].id, milliseconds: 2000)
         let current = try repo.snapshot()
         let decoded = try BackupDocument.decode(BackupDocument(snapshot: current).encode())
-        #expect(decoded.formatVersion == 4)
+        #expect(decoded.formatVersion == 5)
         #expect(try decoded.validatedSnapshot() == current)
     }
     @Test func structureRevisionIgnoresTicksAndFailedMutations() throws {

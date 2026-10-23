@@ -9,10 +9,10 @@ struct BackupDocument: Codable {
     var milestones: [Milestone]
     var series: [RecurrenceSeries]
     init(snapshot: TaskSnapshot, date: Date = Date()) {
-        formatVersion = 4; goals = snapshot.goals; milestones = snapshot.milestones; series = snapshot.series; exportedAt = date; tasks = snapshot.tasks; sessions = snapshot.sessions
+        formatVersion = 5; goals = snapshot.goals; milestones = snapshot.milestones; series = snapshot.series; exportedAt = date; tasks = snapshot.tasks; sessions = snapshot.sessions
     }
     @MainActor func validatedSnapshot() throws -> TaskSnapshot {
-        guard (1...4).contains(formatVersion) else { throw DataError.unsupportedVersion }
+        guard (1...5).contains(formatVersion) else { throw DataError.unsupportedVersion }
         var snapshot = TaskSnapshot(tasks: tasks, sessions: sessions, series: formatVersion >= 3 ? series : [], goals: formatVersion >= 4 ? goals : [], milestones: formatVersion >= 4 ? milestones : [])
         if formatVersion < 3 { for i in snapshot.tasks.indices { snapshot.tasks[i].seriesID = nil; snapshot.tasks[i].scheduledDay = nil } }
         if formatVersion < 4 {
@@ -20,6 +20,9 @@ struct BackupDocument: Codable {
             for i in snapshot.sessions.indices { snapshot.sessions[i].goalIDAtStart = nil }
             for i in snapshot.series.indices { snapshot.series[i].futureGoalID = nil }
         }
+        for i in snapshot.tasks.indices { snapshot.tasks[i].appearance = formatVersion < 5 ? nil : snapshot.tasks[i].appearance?.normalized }
+        for i in snapshot.series.indices { snapshot.series[i].futureAppearance = formatVersion < 5 ? nil : snapshot.series[i].futureAppearance?.normalized }
+        if formatVersion < 5 { for i in snapshot.sessions.indices { snapshot.sessions[i].allocations = nil; snapshot.sessions[i].legacyDay = nil } }
         try snapshot.validate()
         return snapshot
     }

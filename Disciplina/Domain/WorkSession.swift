@@ -17,12 +17,14 @@ struct WorkSession: Identifiable, Equatable, Codable, Sendable {
     var origin: SessionOrigin = .timer
     var durationEditedAt: Date?
     var goalIDAtStart: UUID?
+    var allocations: [DailyAllocation]?
+    var legacyDay: LocalDay?
 }
 
 // Format 1 backups predate session provenance. Keep their decoding explicit.
 extension WorkSession {
     enum CodingKeys: String, CodingKey {
-        case id, taskID, startedAt, endedAt, accumulatedMilliseconds, lastCheckpointAt, endReason, origin, durationEditedAt, goalIDAtStart
+        case id, taskID, startedAt, endedAt, accumulatedMilliseconds, lastCheckpointAt, endReason, origin, durationEditedAt, goalIDAtStart, allocations, legacyDay
     }
     init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
@@ -36,6 +38,8 @@ extension WorkSession {
         origin = try values.decodeIfPresent(SessionOrigin.self, forKey: .origin) ?? .timer
         durationEditedAt = try values.decodeIfPresent(Date.self, forKey: .durationEditedAt)
         goalIDAtStart = try values.decodeIfPresent(UUID.self, forKey: .goalIDAtStart)
+        allocations = try values.decodeIfPresent([DailyAllocation].self, forKey: .allocations)
+        legacyDay = try values.decodeIfPresent(LocalDay.self, forKey: .legacyDay)
     }
 }
 
@@ -51,6 +55,10 @@ struct TaskSnapshot: Equatable, Codable, Sendable {
         guard Set(tasks.map(\.id)).count == tasks.count,
               Set(sessions.map(\.id)).count == sessions.count,
               sessions.filter({ $0.endedAt == nil }).count <= 1 else { throw DataError.invalidSnapshot }
+        let allocationIDs = sessions.flatMap { ($0.allocations ?? []).map(\.id) }
+        guard Set(allocationIDs).count == allocationIDs.count,
+              tasks.allSatisfy({ $0.appearance == $0.appearance?.normalized }),
+              series.allSatisfy({ $0.futureAppearance == $0.futureAppearance?.normalized }) else { throw DataError.invalidSnapshot }
         try validateRecurrence()
         try validateGoals()
         let byID = Dictionary(uniqueKeysWithValues: tasks.map { ($0.id, $0) })
@@ -63,6 +71,8 @@ struct TaskSnapshot: Equatable, Codable, Sendable {
             _ = try TaskService.validatedTitle(task.title)
         }
         for session in sessions {
+            try session.validateAllocation()
+            if let day = session.legacyDay { _ = try day.date() }
             guard let task = byID[session.taskID], session.accumulatedMilliseconds >= 0,
                   (session.endedAt == nil) == (session.endReason == nil),
                   session.lastCheckpointAt != nil,
