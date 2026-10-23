@@ -16,12 +16,13 @@ struct WorkSession: Identifiable, Equatable, Codable, Sendable {
     var endReason: SessionEndReason?
     var origin: SessionOrigin = .timer
     var durationEditedAt: Date?
+    var goalIDAtStart: UUID?
 }
 
 // Format 1 backups predate session provenance. Keep their decoding explicit.
 extension WorkSession {
     enum CodingKeys: String, CodingKey {
-        case id, taskID, startedAt, endedAt, accumulatedMilliseconds, lastCheckpointAt, endReason, origin, durationEditedAt
+        case id, taskID, startedAt, endedAt, accumulatedMilliseconds, lastCheckpointAt, endReason, origin, durationEditedAt, goalIDAtStart
     }
     init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
@@ -34,6 +35,7 @@ extension WorkSession {
         endReason = try values.decodeIfPresent(SessionEndReason.self, forKey: .endReason)
         origin = try values.decodeIfPresent(SessionOrigin.self, forKey: .origin) ?? .timer
         durationEditedAt = try values.decodeIfPresent(Date.self, forKey: .durationEditedAt)
+        goalIDAtStart = try values.decodeIfPresent(UUID.self, forKey: .goalIDAtStart)
     }
 }
 
@@ -42,12 +44,15 @@ struct TaskSnapshot: Equatable, Codable, Sendable {
     var sessions: [WorkSession] = []
 
     var series: [RecurrenceSeries] = []
+    var goals: [Goal] = []
+    var milestones: [Milestone] = []
 
     @MainActor func validate() throws {
         guard Set(tasks.map(\.id)).count == tasks.count,
               Set(sessions.map(\.id)).count == sessions.count,
               sessions.filter({ $0.endedAt == nil }).count <= 1 else { throw DataError.invalidSnapshot }
         try validateRecurrence()
+        try validateGoals()
         let byID = Dictionary(uniqueKeysWithValues: tasks.map { ($0.id, $0) })
         var totals: [UUID: Int64] = [:]
         for task in tasks {

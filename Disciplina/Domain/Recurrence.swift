@@ -43,6 +43,7 @@ struct RecurrenceSeries: Identifiable, Codable, Equatable, Sendable {
     var pendingDay: LocalDay?
     var lastTriggerDay: LocalDay?
     var revision: UUID = UUID()
+    var futureGoalID: UUID?
     var scheduleDescription: String {
         if weekdays.sorted() == Array(1...7) { return "Every day" }
         if weekdays.sorted() == Array(2...6) { return "Weekdays" }
@@ -133,7 +134,7 @@ extension TaskSnapshot {
             guard series[index].enabled, let day = series[index].pendingDay, day <= today,
                   let id = series[index].pendingTaskID else { continue }
             tasks.append(TodoItem(id: id, title: series[index].title, createdAt: now, updatedAt: now,
-                                  completedAt: nil, seriesID: series[index].id, scheduledDay: day))
+                                  completedAt: nil, seriesID: series[index].id, scheduledDay: day, goalID: series[index].futureGoalID))
             series[index].currentTaskID = id
             series[index].pendingTaskID = nil; series[index].pendingDay = nil
             series[index].revision = makeID(); changed = true

@@ -17,6 +17,7 @@ struct TaskInputView: View {
     let store: TaskStore
     let focusToken: Int
     var cancel: () -> Void = {}
+    var goalID: UUID? = nil
     @State private var title = ""
     var body: some View {
         HStack {
@@ -26,7 +27,7 @@ struct TaskInputView: View {
                 .disabled(title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || store.unavailable)
         }
     }
-    private func add() { if store.create(title: title) { title = "" } }
+    private func add() { if store.create(title: title, goalID: goalID) { title = "" } }
 }
 
 struct TimerControls: View {
@@ -129,6 +130,7 @@ struct TaskDetailsView: View {
     @State private var editor: SessionEditorRequest?
     @State private var deleting: UUID?
     @State private var repeatEditor = false
+    @State private var goalEditor = false
 
     var body: some View {
         ScrollView {
@@ -139,6 +141,11 @@ struct TaskDetailsView: View {
                         .accessibilityLabel("Close details").help("Close details")
                 }
                 Text(item.status.title)
+                HStack {
+                    Text("Goal: " + (store.goals.first { $0.id == item.goalID }?.title ?? "Unassigned")).lineLimit(2)
+                    Spacer()
+                    Button("Change Goal…") { goalEditor = true }.disabled(store.unavailable)
+                }
                 if let linked = store.series.first(where: { $0.id == item.seriesID }) {
                     Label(linked.scheduleDescription, systemImage: "repeat")
                     Text(!linked.enabled ? "Repeating stopped" : linked.currentTaskID == item.id ? "Current occurrence" : "Historical occurrence").font(.caption)
@@ -166,6 +173,7 @@ struct TaskDetailsView: View {
                 ForEach(sessions) { session in
                     VStack(alignment: .leading, spacing: 4) {
                         Text(session.startedAt.formatted())
+                        Text("Goal: " + (store.goals.first { $0.id == session.goalIDAtStart }?.title ?? "Unassigned")).foregroundStyle(.secondary)
                         if session.origin == .manual { Text("Manually added") }
                         else { Text(session.endedAt.map { "Ended \($0.formatted())" } ?? "Running") }
                         Text(DurationText.precise(session.id == store.timer.running?.id ? store.timer.elapsedMilliseconds : session.accumulatedMilliseconds))
@@ -182,6 +190,7 @@ struct TaskDetailsView: View {
                 }
             }.padding().frame(maxWidth: .infinity, alignment: .leading)
         }.frame(minWidth: 300).accessibilityIdentifier("task-details")
+            .sheet(isPresented: $goalEditor) { TaskGoalEditorView(store: store, task: item) }
             .sheet(isPresented: $repeatEditor) {
                 RepeatEditorView(weekdays: store.currentSeries(for: item)?.weekdays ?? []) { days in store.setRepeat(item.id, weekdays: days) }
             }
@@ -194,7 +203,7 @@ struct TaskDetailsView: View {
                     if let id = deleting { store.deleteSession(taskID: item.id, sessionID: id) }
                     deleting = nil
                 }
-            } message: { Text("Its recorded duration will be removed from the task total. This cannot be undone.") }
+            } message: { Text("Its recorded duration will be removed from the task and its attributed goal total. This cannot be undone.") }
     }
     private func openEditor(_ id: UUID?) {
         guard store.prepareSessionEditor(taskID: item.id) else { return }
@@ -223,14 +232,7 @@ struct MainTaskWindowView: View {
             }
             TaskInputView(store: store, focusToken: focusToken)
             StoreErrorView(store: store)
-            if let notice = store.notice {
-                HStack {
-                    Text(notice).font(.callout)
-                    if !store.deletedIDs.isEmpty { Button("Undo") { store.undoDelete() } }
-                    Spacer()
-                    Button("Dismiss") { store.notice = nil }
-                }
-            }
+            DeletionNoticeView(store: store)
             TaskDetailSplit(showsDetails: store.items.contains { $0.id == detailID }) {
                 List(selection: $selection) {
                     ForEach(store.dayGroups) { day in

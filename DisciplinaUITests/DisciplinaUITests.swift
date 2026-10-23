@@ -53,6 +53,128 @@ final class DisciplinaUITests: XCTestCase {
         add(attachment)
     }
 
+    private func openGoals() {
+        let button = app.buttons["navigate-goals"].firstMatch
+        if button.exists && button.isHittable { button.click() }
+        else {
+            app.menuButtons["compact-navigation"].click()
+            app.menuItems["Goals"].click()
+        }
+        XCTAssertTrue(app.buttons["New Goal"].waitForExistence(timeout: 5))
+    }
+    private func createGoal(_ title: String) {
+        app.buttons["New Goal"].click()
+        let sheet = app.sheets.firstMatch
+        XCTAssertTrue(sheet.waitForExistence(timeout: 5))
+        sheet.textFields["goal-title"].click(); sheet.textFields["goal-title"].typeText(title)
+        let criterion = sheet.textViews["goal-criteria"]
+        criterion.click(); criterion.typeText("A verified outcome")
+        sheet.buttons["Save"].click()
+        XCTAssertTrue(app.scrollViews["goal-details"].waitForExistence(timeout: 5))
+    }
+    private func goalButton(_ label: String) -> XCUIElement {
+        let pane = app.scrollViews["goal-details"]
+        let button = pane.buttons[label].firstMatch
+        XCTAssertTrue(button.waitForExistence(timeout: 5))
+        for _ in 0..<15 {
+            let frame = button.frame
+            if frame.minY >= pane.frame.minY && frame.maxY <= pane.frame.maxY { break }
+            pane.scroll(byDeltaX: 0, deltaY: frame.midY > pane.frame.midY ? -180 : 180)
+        }
+        return button
+    }
+    func testGoalsMilestonesLifecycleAndUndo() {
+        openGoals(); createGoal("Launch project")
+        goalButton("Add Milestone").click()
+        var sheet = app.sheets.firstMatch
+        sheet.textFields["milestone-title"].typeText("First release")
+        sheet.buttons["Save"].click()
+        goalButton("Complete milestone First release").click()
+        XCTAssertTrue(app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "1 of 1 milestones completed")).firstMatch.waitForExistence(timeout: 5))
+        goalButton("Mark Achieved").click()
+        XCTAssertTrue(app.buttons["Reopen Goal"].exists)
+        goalButton("Archive Goal").click(); goalButton("Restore Goal").click()
+        XCTAssertTrue(app.buttons["Reopen Goal"].exists)
+        goalButton("Reopen Goal").click()
+        let menu = app.scrollViews["goal-details"].menuButtons["Actions for milestone First release"]
+        menu.click(); app.menuItems["Delete Milestone"].click()
+        XCTAssertTrue(app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "No milestones defined")).firstMatch.waitForExistence(timeout: 5))
+        app.typeKey("z", modifierFlags: .command)
+        XCTAssertTrue(app.staticTexts["First release"].waitForExistence(timeout: 5))
+        goalButton("Edit Goal").click()
+        sheet = app.sheets.firstMatch
+        sheet.textFields["goal-title"].click(); sheet.textFields["goal-title"].typeKey("a", modifierFlags: .command)
+        sheet.textFields["goal-title"].typeText("Cancelled title")
+        sheet.buttons["Cancel"].click()
+        XCTAssertTrue(app.staticTexts["Launch project"].exists)
+        XCTAssertFalse(app.staticTexts["Cancelled title"].exists)
+        let attachment = XCTAttachment(screenshot: app.windows["main"].screenshot())
+        attachment.name = "goals-milestones"; attachment.lifetime = .keepAlways; add(attachment)
+    }
+    func testGoalTaskCreationAttributionAndPauseBeforeUnlinking() {
+        openGoals(); createGoal("Learn Swift")
+        let pane = app.scrollViews["goal-details"]
+        let field = pane.textFields["new-task"]
+        for _ in 0..<8 {
+            if field.exists && field.frame.minY >= pane.frame.minY && field.frame.maxY <= pane.frame.maxY { break }
+            pane.scroll(byDeltaX: 0, deltaY: -150)
+        }
+        field.click(); field.typeText("Practice Swift\n")
+        XCTAssertTrue(pane.staticTexts["Practice Swift"].waitForExistence(timeout: 5))
+        goalButton("Start Practice Swift").click()
+        pane.staticTexts["Practice Swift"].click()
+        XCTAssertTrue(app.scrollViews["task-details"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Goal: Learn Swift"].firstMatch.exists)
+        clickDetailButton("Change Goal…")
+        let sheet = app.sheets.firstMatch
+        sheet.popUpButtons["goal-picker"].click(); app.menuItems["Unassigned"].click()
+        sheet.buttons["Save"].click()
+        XCTAssertTrue(app.buttons["Pause and Continue"].waitForExistence(timeout: 5))
+        app.windows["main"].sheets.buttons["Pause and Continue"].firstMatch.click()
+        XCTAssertTrue(app.buttons["Resume Practice Swift"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Goal: Unassigned"].exists)
+        XCTAssertTrue(app.staticTexts["Goal: Learn Swift"].exists)
+        app.buttons["goals-back"].click()
+        XCTAssertFalse(app.scrollViews["goal-details"].staticTexts["Practice Swift"].exists)
+        app.buttons["navigate-tasks"].firstMatch.click()
+        XCTAssertTrue(app.outlines["main-task-list"].staticTexts["Practice Swift"].exists)
+    }
+    func testGoalsValidationAndNavigationPreserveTaskSelection() {
+        add("Keep selection")
+        app.outlines["main-task-list"].staticTexts["Keep selection"].click()
+        openGoals(); app.buttons["New Goal"].click()
+        let sheet = app.sheets.firstMatch
+        sheet.buttons["Save"].click()
+        XCTAssertTrue(sheet.staticTexts["goal-editor-error"].waitForExistence(timeout: 5))
+        sheet.buttons["Cancel"].click()
+        app.buttons["navigate-tasks"].firstMatch.click()
+        XCTAssertTrue(app.scrollViews["task-details"].staticTexts["Keep selection"].exists)
+        XCTAssertGreaterThanOrEqual(app.outlines["main-task-list"].frame.width, 360)
+        XCTAssertGreaterThanOrEqual(app.scrollViews["task-details"].frame.width, 300)
+        XCTAssertEqual(app.statusItems.count, 1)
+    }
+
+    func testHundredGoalsWithHundredTasksRemainNavigable() {
+        app.terminate()
+        app.launchArguments = ["--ui-testing", "--seed-goals-performance"]
+        app.launch()
+        XCTAssertTrue(app.textFields["new-task"].firstMatch.waitForExistence(timeout: 60))
+        openGoals()
+        let goal = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Open goal Performance Goal")).firstMatch
+        XCTAssertTrue(goal.waitForExistence(timeout: 5)); goal.click()
+        XCTAssertTrue(app.scrollViews["goal-details"].waitForExistence(timeout: 5))
+        let start = app.scrollViews["goal-details"].buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Start Work")).firstMatch
+        XCTAssertTrue(start.waitForExistence(timeout: 5))
+        let label = start.label
+        goalButton(label).click()
+        let pause = app.buttons[label.replacingOccurrences(of: "Start ", with: "Pause ")]
+        XCTAssertTrue(pause.waitForExistence(timeout: 10)); pause.click()
+        XCTAssertTrue(app.buttons[label.replacingOccurrences(of: "Start ", with: "Resume ")].waitForExistence(timeout: 10))
+        app.buttons["navigate-tasks"].firstMatch.click()
+        XCTAssertTrue(app.outlines["main-task-list"].firstMatch.waitForExistence(timeout: 5))
+        XCTAssertEqual(app.statusItems.count, 1)
+    }
+
     func testLoginLaunchHasStatusItemWithoutMainWindow() {
         app.terminate()
         app.launchArguments = ["--ui-testing", "--simulate-login-launch"]
@@ -350,7 +472,10 @@ final class DisciplinaUITests: XCTestCase {
         XCTAssertEqual(XCTWaiter.wait(for: [fullscreen], timeout: 8), .completed)
         // Native full screen auto-hides the menu bar. Reveal it before targeting
         // the status item, whose accessibility frame is otherwise off-screen.
-        window.coordinate(withNormalizedOffset: CGVector(dx: 0.75, dy: 0)).hover()
+        // A native navigation toolbar changes the accessible window's top inset.
+        // Reveal the menu bar at the display edge, not the content's top edge.
+        window.coordinate(withNormalizedOffset: .zero)
+            .withOffset(CGVector(dx: window.frame.width * 0.75, dy: 1 - window.frame.minY)).hover()
         let status = app.statusItems.firstMatch
         let visible = XCTNSPredicateExpectation(predicate: NSPredicate(format: "hittable == true"), object: status)
         XCTAssertEqual(XCTWaiter.wait(for: [visible], timeout: 5), .completed)

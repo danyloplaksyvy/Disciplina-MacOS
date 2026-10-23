@@ -23,11 +23,11 @@ final class TaskService {
 
     func fetchAll() throws -> [TodoItem] { try repository.fetchAll() }
 
-    func create(title: String) throws {
+    func create(title: String, goalID: UUID? = nil) throws {
         let title = try Self.validatedTitle(title)
         let date = now()
         try repository.insert(TodoItem(id: makeID(), title: title, createdAt: date,
-                                       updatedAt: date, completedAt: nil))
+                                       updatedAt: date, completedAt: nil, goalID: goalID))
     }
 
     func rename(id: UUID, title: String) throws {
