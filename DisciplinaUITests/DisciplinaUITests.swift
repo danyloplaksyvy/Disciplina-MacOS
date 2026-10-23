@@ -54,7 +54,7 @@ final class DisciplinaUITests: XCTestCase {
     }
 
     private func openGoals() {
-        let button = app.buttons["navigate-goals"]
+        let button = app.buttons["navigate-goals"].firstMatch
         if button.exists && button.isHittable { button.click() }
         else {
             app.menuButtons["compact-navigation"].click()
@@ -136,7 +136,7 @@ final class DisciplinaUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Goal: Learn Swift"].exists)
         app.buttons["goals-back"].click()
         XCTAssertFalse(app.scrollViews["goal-details"].staticTexts["Practice Swift"].exists)
-        app.buttons["navigate-tasks"].click()
+        app.buttons["navigate-tasks"].firstMatch.click()
         XCTAssertTrue(app.outlines["main-task-list"].staticTexts["Practice Swift"].exists)
     }
     func testGoalsValidationAndNavigationPreserveTaskSelection() {
@@ -147,7 +147,7 @@ final class DisciplinaUITests: XCTestCase {
         sheet.buttons["Save"].click()
         XCTAssertTrue(sheet.staticTexts["goal-editor-error"].waitForExistence(timeout: 5))
         sheet.buttons["Cancel"].click()
-        app.buttons["navigate-tasks"].click()
+        app.buttons["navigate-tasks"].firstMatch.click()
         XCTAssertTrue(app.scrollViews["task-details"].staticTexts["Keep selection"].exists)
         XCTAssertGreaterThanOrEqual(app.outlines["main-task-list"].frame.width, 360)
         XCTAssertGreaterThanOrEqual(app.scrollViews["task-details"].frame.width, 300)
@@ -158,7 +158,7 @@ final class DisciplinaUITests: XCTestCase {
         app.terminate()
         app.launchArguments = ["--ui-testing", "--seed-goals-performance"]
         app.launch()
-        XCTAssertTrue(app.textFields["new-task"].waitForExistence(timeout: 60))
+        XCTAssertTrue(app.textFields["new-task"].firstMatch.waitForExistence(timeout: 60))
         openGoals()
         let goal = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Open goal Performance Goal")).firstMatch
         XCTAssertTrue(goal.waitForExistence(timeout: 5)); goal.click()
@@ -170,8 +170,8 @@ final class DisciplinaUITests: XCTestCase {
         let pause = app.buttons[label.replacingOccurrences(of: "Start ", with: "Pause ")]
         XCTAssertTrue(pause.waitForExistence(timeout: 10)); pause.click()
         XCTAssertTrue(app.buttons[label.replacingOccurrences(of: "Start ", with: "Resume ")].waitForExistence(timeout: 10))
-        app.buttons["navigate-tasks"].click()
-        XCTAssertTrue(app.outlines["main-task-list"].waitForExistence(timeout: 5))
+        app.buttons["navigate-tasks"].firstMatch.click()
+        XCTAssertTrue(app.outlines["main-task-list"].firstMatch.waitForExistence(timeout: 5))
         XCTAssertEqual(app.statusItems.count, 1)
     }
 
