@@ -29,7 +29,7 @@ struct ActivityView: View {
                 if taskID != nil || goalID != nil {
                     Button("Back to Activity") { taskID = nil; goalID = nil }
                 }
-                Text("Activity").font(.largeTitle.bold()); Spacer()
+                Text("Activity").font(.largeTitle.bold()).accessibilityIdentifier("activity-heading"); Spacer()
             }
             StoreErrorView(store: store)
             if let id = taskID, let task = (store.items + store.deleted).first(where: { $0.id == id }) {
@@ -57,7 +57,6 @@ struct ActivityView: View {
                 }
             }
         }.padding(24).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .accessibilityIdentifier("activity-view")
             .onChange(of: isVisible, initial: true) { _, visible in
                 if visible && !hasOpened { selection = LocalDay(Date(), calendar: calendar); hasOpened = true }
             }

@@ -202,7 +202,7 @@ final class DisciplinaUITests: XCTestCase {
         taskLink.click()
         XCTAssertTrue(app.scrollViews["task-details"].waitForExistence(timeout: 5))
         app.buttons["Back to Activity"].click()
-        app.segmentedControls.buttons["Weekly Review"].click()
+        app.radioButtons["Weekly Review"].click()
         XCTAssertTrue(app.staticTexts["Currently completed during this week"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["This Week"].exists)
     }
