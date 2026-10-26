@@ -126,7 +126,7 @@ struct ActivityView: View {
                     Button(task?.title ?? "Task") { taskID = entry.taskID }.buttonStyle(.link).accessibilityIdentifier("activity-task-\(entry.id)")
                     if task?.deletedAt != nil { Text("Deleted task").font(.caption) }
                     Text("\(entry.startedAt.formatted(date: .abbreviated, time: .shortened)) · \(store.unavailable ? "—" : DurationText.precise(entry.milliseconds))").font(.caption)
-                    Text(entry.legacy ? "Legacy · session start date" : entry.provenance == .manual ? "Manually added" : entry.provenance == .corrected ? "Corrected duration" : "Measured work").font(.caption).foregroundStyle(.secondary)
+                    Text(entry.legacy ? (entry.provenance == .corrected ? "Legacy · session start date · Edited duration" : "Legacy · session start date") : entry.provenance == .manual ? "Manually added" : entry.provenance == .corrected ? "Corrected duration" : "Measured work").font(.caption).foregroundStyle(.secondary)
                 }.padding(.vertical, 4)
             }
         }.frame(maxWidth: .infinity, alignment: .leading)

@@ -80,6 +80,10 @@ import Testing
         var json = try #require(JSONSerialization.jsonObject(with: old) as? [String: Any]); json["formatVersion"] = 4
         let imported = try BackupDocument.decode(JSONSerialization.data(withJSONObject: json)).validatedSnapshot()
         #expect(imported.sessions[0].allocations == nil)
+        var legacy = imported.sessions[0]
+        legacy.origin = .timer; legacy.durationEditedAt = legacy.startedAt
+        let legacyEntry = ActivitySummary(sessions: [legacy]).days.values.first?.first
+        #expect(legacyEntry?.legacy == true && legacyEntry?.provenance == .corrected)
         var invalid = snapshot; invalid.sessions[0].allocations![0].milliseconds += 1
         #expect(throws: DataError.self) { try invalid.validate() }
     }

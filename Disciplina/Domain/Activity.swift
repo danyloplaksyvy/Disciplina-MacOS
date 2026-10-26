@@ -75,7 +75,7 @@ struct ActivitySummary {
                 }
             } else if session.accumulatedMilliseconds > 0 {
                 let day = session.legacyDay ?? LocalDay(session.startedAt, calendar: legacyCalendar)
-                days[day, default: []].append(Entry(id: session.id, sessionID: session.id, taskID: session.taskID, goalID: session.goalIDAtStart, startedAt: session.startedAt, milliseconds: session.accumulatedMilliseconds, provenance: session.origin == .manual ? .manual : nil, legacy: session.origin != .manual))
+                days[day, default: []].append(Entry(id: session.id, sessionID: session.id, taskID: session.taskID, goalID: session.goalIDAtStart, startedAt: session.startedAt, milliseconds: session.accumulatedMilliseconds, provenance: session.durationEditedAt != nil ? .corrected : (session.origin == .manual ? .manual : nil), legacy: session.origin != .manual))
             }
         }
         for day in Array(days.keys) { days[day]!.sort { $0.startedAt == $1.startedAt ? $0.id.uuidString < $1.id.uuidString : $0.startedAt < $1.startedAt } }
