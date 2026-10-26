@@ -30,10 +30,11 @@ struct AppearanceEditorView: View {
                     Label(symbol.replacingOccurrences(of: ".", with: " ").capitalized, systemImage: symbol).tag(Optional(symbol))
                 }
             }
+            .accessibilityIdentifier("appearance-symbol")
             Picker("Color", selection: $appearance.tint) {
                 Text("App accent").tag(nil as String?)
                 ForEach(TaskAppearance.tints, id: \.self) { tint in Text(tint).tag(Optional(tint)) }
-            }.disabled(appearance.symbol == nil)
+            }.accessibilityIdentifier("appearance-color").disabled(appearance.symbol == nil)
             if let symbol = appearance.symbol { Label(item.title, systemImage: symbol).foregroundStyle(appearance.color).lineLimit(2) }
             Text("The current recurring task also updates the appearance of future occurrences.").font(.caption).foregroundStyle(.secondary)
             StoreErrorView(store: store)

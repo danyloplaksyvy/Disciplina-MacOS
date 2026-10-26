@@ -196,9 +196,10 @@ final class DisciplinaUITests: XCTestCase {
         sheet.buttons["Save"].click()
         openActivity()
         XCTAssertTrue(app.staticTexts["Manual or corrected"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.buttons["Calendar work"].firstMatch.exists)
+        let taskLink = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH %@", "activity-task-")).firstMatch
+        XCTAssertTrue(taskLink.exists)
         app.buttons["Next month"].click(); app.buttons["Today"].click()
-        app.buttons["Calendar work"].firstMatch.click()
+        taskLink.click()
         XCTAssertTrue(app.scrollViews["task-details"].waitForExistence(timeout: 5))
         app.buttons["Back to Activity"].click()
         app.segmentedControls.buttons["Weekly Review"].click()
@@ -212,12 +213,12 @@ final class DisciplinaUITests: XCTestCase {
         list.staticTexts["Recognizable task"].click()
         clickDetailButton("Appearance…")
         let sheet = app.windows["main"].sheets.firstMatch
-        sheet.popUpButtons["Symbol"].click(); app.menuItems["Book"].click()
+        sheet.popUpButtons["appearance-symbol"].click(); app.menuItems["Book"].click()
         sheet.buttons["Cancel"].click()
         XCTAssertFalse(list.images.matching(NSPredicate(format: "identifier BEGINSWITH %@", "task-symbol-")).firstMatch.exists)
         clickDetailButton("Appearance…")
-        sheet.popUpButtons["Symbol"].click(); app.menuItems["Book"].click()
-        sheet.popUpButtons["Color"].click(); app.menuItems["Blue"].click()
+        sheet.popUpButtons["appearance-symbol"].click(); app.menuItems["Book"].click()
+        sheet.popUpButtons["appearance-color"].click(); app.menuItems["Blue"].click()
         sheet.buttons["Save"].click()
         XCTAssertTrue(list.images.matching(NSPredicate(format: "identifier BEGINSWITH %@", "task-symbol-")).firstMatch.waitForExistence(timeout: 5))
     }

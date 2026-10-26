@@ -124,7 +124,7 @@ struct ActivityView: View {
             ForEach(entries.sorted { $0.startedAt == $1.startedAt ? $0.id.uuidString < $1.id.uuidString : $0.startedAt < $1.startedAt }) { entry in
                 let task = (store.items + store.deleted).first { $0.id == entry.taskID }
                 VStack(alignment: .leading, spacing: 4) {
-                    Button(task?.title ?? "Task") { taskID = entry.taskID }.buttonStyle(.link)
+                    Button(task?.title ?? "Task") { taskID = entry.taskID }.buttonStyle(.link).accessibilityIdentifier("activity-task-\(entry.id)")
                     if task?.deletedAt != nil { Text("Deleted task").font(.caption) }
                     Text("\(entry.startedAt.formatted(date: .abbreviated, time: .shortened)) · \(store.unavailable ? "—" : DurationText.precise(entry.milliseconds))").font(.caption)
                     Text(entry.legacy ? "Legacy · session start date" : entry.provenance == .manual ? "Manually added" : entry.provenance == .corrected ? "Corrected duration" : "Measured work").font(.caption).foregroundStyle(.secondary)
