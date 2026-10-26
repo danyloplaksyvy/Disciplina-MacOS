@@ -196,9 +196,14 @@ final class DisciplinaUITests: XCTestCase {
         sheet.buttons["Save"].click()
         openActivity()
         XCTAssertTrue(app.staticTexts["Manual or corrected"].waitForExistence(timeout: 5))
-        let taskLink = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH %@", "activity-task-")).firstMatch
+        let taskLink = app.links.matching(NSPredicate(format: "identifier BEGINSWITH %@", "activity-task-")).firstMatch
         XCTAssertTrue(taskLink.exists)
         app.buttons["Next month"].click(); app.buttons["Today"].click()
+        let activityPane = app.scrollViews.containing(.link, identifier: taskLink.identifier).firstMatch
+        for _ in 0..<12 {
+            if taskLink.frame.minY >= activityPane.frame.minY && taskLink.frame.maxY <= activityPane.frame.maxY { break }
+            activityPane.scroll(byDeltaX: 0, deltaY: -150)
+        }
         taskLink.click()
         XCTAssertTrue(app.scrollViews["task-details"].waitForExistence(timeout: 5))
         app.buttons["Back to Activity"].click()
