@@ -47,12 +47,12 @@ struct ActivityView: View {
                     Spacer(); Button(weekly ? "This Week" : "Today") { selection = LocalDay(Date(), calendar: calendar) }
                 }
                 if weekly {
-                    ScrollView { detail; weeklySummary }.accessibilityIdentifier("weekly-review")
+                    ScrollView { VStack(alignment: .leading, spacing: 16) { detail; weeklySummary } }.accessibilityIdentifier("weekly-review")
                 } else {
                     GeometryReader { geometry in
                         if geometry.size.width >= 900 {
                             HStack(alignment: .top, spacing: 24) { monthGrid.frame(width: geometry.size.width * 0.52); ScrollView { detail }.frame(maxWidth: .infinity) }
-                        } else { ScrollView { monthGrid; Divider().padding(.vertical); detail } }
+                        } else { ScrollView { VStack(alignment: .leading, spacing: 16) { monthGrid; Divider().padding(.vertical); detail } } }
                     }
                 }
             }
