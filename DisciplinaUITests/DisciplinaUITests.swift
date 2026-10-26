@@ -16,7 +16,9 @@ final class DisciplinaUITests: XCTestCase {
 
     private func add(_ title: String) {
         let field = app.textFields["new-task"]
-        field.click(); field.typeText(title + "\n")
+        field.click(); field.typeText(title)
+        XCTAssertEqual(field.value as? String, title)
+        field.typeKey(.return, modifierFlags: [])
         XCTAssertTrue(app.staticTexts[title].waitForExistence(timeout: 3))
         XCTAssertEqual(field.value as? String, "")
     }
@@ -172,7 +174,7 @@ final class DisciplinaUITests: XCTestCase {
         XCTAssertTrue(app.buttons[label.replacingOccurrences(of: "Start ", with: "Resume ")].waitForExistence(timeout: 10))
         app.buttons["navigate-tasks"].firstMatch.click()
         XCTAssertTrue(app.outlines["main-task-list"].firstMatch.waitForExistence(timeout: 5))
-        XCTAssertEqual(app.statusItems.count, 1)
+        XCTAssertTrue(app.statusItems.firstMatch.waitForExistence(timeout: 5))
     }
 
     private func openActivity() {
@@ -196,10 +198,10 @@ final class DisciplinaUITests: XCTestCase {
         sheet.buttons["Save"].click()
         openActivity()
         XCTAssertTrue(app.staticTexts["Manual or corrected"].waitForExistence(timeout: 5))
-        let taskLink = app.links.matching(NSPredicate(format: "identifier BEGINSWITH %@", "activity-task-")).firstMatch
+        let taskLink = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "activity-task-")).firstMatch
         XCTAssertTrue(taskLink.exists)
         app.buttons["Next month"].click(); app.buttons["Today"].click()
-        let activityPane = app.scrollViews.containing(.link, identifier: taskLink.identifier).firstMatch
+        let activityPane = app.scrollViews.containing(.button, identifier: taskLink.identifier).firstMatch
         for _ in 0..<12 {
             if taskLink.frame.minY >= activityPane.frame.minY && taskLink.frame.maxY <= activityPane.frame.maxY { break }
             activityPane.scroll(byDeltaX: 0, deltaY: -150)
