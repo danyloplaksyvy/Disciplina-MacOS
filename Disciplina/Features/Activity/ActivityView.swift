@@ -70,33 +70,45 @@ struct ActivityView: View {
         let count = calendar.range(of: .day, in: .month, for: selectedDate)!.count
         return VStack(alignment: .leading, spacing: 8) {
             Text("Recorded totals; legacy time uses session start dates.").font(.caption).foregroundStyle(.secondary)
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 4), count: 7), spacing: 4) {
-            ForEach(0..<7, id: \.self) { index in
-                Text(calendar.shortWeekdaySymbols[(calendar.firstWeekday - 1 + index) % 7]).font(.caption).foregroundStyle(.secondary)
+            HStack(spacing: 4) {
+                ForEach(0..<7, id: \.self) { index in
+                    Text(calendar.shortWeekdaySymbols[(calendar.firstWeekday - 1 + index) % 7])
+                        .font(.caption).frame(maxWidth: .infinity).foregroundStyle(.secondary)
+                }
             }
-            ForEach(0..<((offset + count + 6) / 7 * 7), id: \.self) { cell in
-                if cell >= offset && cell < offset + count {
-                    let date = calendar.date(byAdding: .day, value: cell - offset, to: month.start)!
-                    let day = LocalDay(date, calendar: calendar)
-                    let values = store.activity.days[day] ?? []
-                    Button { selection = day; calendarFocused = true } label: {
-                        VStack(spacing: 4) {
-                            Text("\(day.day)").fontWeight(calendar.isDateInToday(date) ? .bold : .regular)
-                            if !values.isEmpty { Text(store.unavailable ? "—" : totalText(values)).font(.caption2).lineLimit(1).minimumScaleFactor(0.7) }
-                            else { Text(" ").font(.caption2) }
-                            Circle().fill(values.isEmpty ? Color.clear : Theme.accent).frame(width: 4, height: 4)
-                        }.frame(maxWidth: .infinity, minHeight: 58)
-                            .background(selection == day ? Theme.accent.opacity(0.16) : Color.clear, in: RoundedRectangle(cornerRadius: 6))
-                            .overlay(RoundedRectangle(cornerRadius: 6).stroke(calendar.isDateInToday(date) ? Theme.accent : .clear))
-                            .contentShape(Rectangle())
-                    }.buttonStyle(.plain).accessibilityLabel("\(day.formatted), \(store.unavailable ? "time unavailable" : totalText(values))\(selection == day ? ", selected" : "")")
-                } else { Color.clear.frame(height: 58).accessibilityHidden(true) }
+            // At most six weeks: ordinary rows avoid a nested native collection view
+            // consuming scroll-wheel events intended for the Activity scroll view.
+            ForEach(0..<((offset + count + 6) / 7), id: \.self) { week in
+                HStack(spacing: 4) {
+                    ForEach(0..<7, id: \.self) { weekday in
+                        calendarCell(week * 7 + weekday, offset: offset, count: count, start: month.start)
+                            .frame(maxWidth: .infinity)
+                    }
+                }
             }
-        } }.focusable().focused($calendarFocused)
+        }.focusable().focused($calendarFocused)
             .onKeyPress(.leftArrow) { moveDay(-1); return .handled }
             .onKeyPress(.rightArrow) { moveDay(1); return .handled }
             .onKeyPress(.upArrow) { moveDay(-7); return .handled }
             .onKeyPress(.downArrow) { moveDay(7); return .handled }
+    }
+    @ViewBuilder private func calendarCell(_ cell: Int, offset: Int, count: Int, start: Date) -> some View {
+        if cell >= offset && cell < offset + count {
+            let date = calendar.date(byAdding: .day, value: cell - offset, to: start)!
+            let day = LocalDay(date, calendar: calendar)
+            let values = store.activity.days[day] ?? []
+            Button { selection = day; calendarFocused = true } label: {
+                VStack(spacing: 4) {
+                    Text("\(day.day)").fontWeight(calendar.isDateInToday(date) ? .bold : .regular)
+                    if !values.isEmpty { Text(store.unavailable ? "—" : totalText(values)).font(.caption2).lineLimit(1).minimumScaleFactor(0.7) }
+                    else { Text(" ").font(.caption2) }
+                    Circle().fill(values.isEmpty ? Color.clear : Theme.accent).frame(width: 4, height: 4)
+                }.frame(maxWidth: .infinity, minHeight: 58)
+                    .background(selection == day ? Theme.accent.opacity(0.16) : Color.clear, in: RoundedRectangle(cornerRadius: 6))
+                    .overlay(RoundedRectangle(cornerRadius: 6).stroke(calendar.isDateInToday(date) ? Theme.accent : .clear))
+                    .contentShape(Rectangle())
+            }.buttonStyle(.plain).accessibilityLabel("\(day.formatted), \(store.unavailable ? "time unavailable" : totalText(values))\(selection == day ? ", selected" : "")")
+        } else { Color.clear.frame(height: 58).accessibilityHidden(true) }
     }
     private func moveDay(_ delta: Int) { if let date = calendar.date(byAdding: .day, value: delta, to: selectedDate) { selection = LocalDay(date, calendar: calendar) } }
     private func totalText(_ values: [ActivitySummary.Entry]) -> String {

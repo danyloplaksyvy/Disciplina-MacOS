@@ -49,7 +49,7 @@ struct MainNavigationView: View {
                             .accessibilityHidden(destination != .tasks).disabled(destination != .tasks).zIndex(destination == .tasks ? 1 : 0)
                         ActivityView(store: store, isVisible: destination == .activity)
                             .opacity(destination == .activity ? 1 : 0).allowsHitTesting(destination == .activity)
-                            .accessibilityHidden(destination != .activity).disabled(destination != .activity).zIndex(destination == .activity ? 1 : 0)
+                            .accessibilityHidden(destination != .activity).zIndex(destination == .activity ? 1 : 0)
                         GoalsView(store: store)
                             .opacity(destination == .goals ? 1 : 0).allowsHitTesting(destination == .goals)
                             .accessibilityHidden(destination != .goals).disabled(destination != .goals).zIndex(destination == .goals ? 1 : 0)
