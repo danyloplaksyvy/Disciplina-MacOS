@@ -29,7 +29,7 @@ final class DisciplinaUITests: XCTestCase {
         XCTAssertTrue(button.waitForExistence(timeout: 5))
         for _ in 0..<12 {
             let frame = button.frame
-            if button.isHittable { break }
+            if frame.minY >= pane.frame.minY && frame.maxY <= pane.frame.maxY { break }
             pane.scroll(byDeltaX: 0, deltaY: frame.midY > pane.frame.midY ? -150 : 150)
         }
         button.click()
@@ -80,7 +80,7 @@ final class DisciplinaUITests: XCTestCase {
         XCTAssertTrue(button.waitForExistence(timeout: 5))
         for _ in 0..<15 {
             let frame = button.frame
-            if button.isHittable { break }
+            if frame.minY >= pane.frame.minY && frame.maxY <= pane.frame.maxY { break }
             pane.scroll(byDeltaX: 0, deltaY: frame.midY > pane.frame.midY ? -180 : 180)
         }
         return button

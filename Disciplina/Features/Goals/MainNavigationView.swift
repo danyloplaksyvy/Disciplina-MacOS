@@ -42,17 +42,18 @@ struct MainNavigationView: View {
                         }.padding(.horizontal, 24).padding(.top, 8)
                     }
                     DeletionNoticeView(store: store).padding(.horizontal, 24)
-                    // Keep both destinations mounted so drafts, selection, scroll and divider state survive navigation.
+                    // Each destination keeps its SwiftUI state in a retained native host.
+                    // Native hiding also removes embedded scroll views from hit testing.
                     ZStack {
-                        MainTaskWindowView(store: store, openSettings: openSettings)
-                            .opacity(destination == .tasks ? 1 : 0).allowsHitTesting(destination == .tasks)
-                            .accessibilityHidden(destination != .tasks).disabled(destination != .tasks).zIndex(destination == .tasks ? 1 : 0)
-                        ActivityView(store: store, isVisible: destination == .activity)
-                            .opacity(destination == .activity ? 1 : 0).allowsHitTesting(destination == .activity)
-                            .accessibilityHidden(destination != .activity).zIndex(destination == .activity ? 1 : 0)
-                        GoalsView(store: store)
-                            .opacity(destination == .goals ? 1 : 0).allowsHitTesting(destination == .goals)
-                            .accessibilityHidden(destination != .goals).disabled(destination != .goals).zIndex(destination == .goals ? 1 : 0)
+                        RetainedDestination(isVisible: destination == .tasks) {
+                            MainTaskWindowView(store: store, openSettings: openSettings).tint(Theme.accent)
+                        }
+                        RetainedDestination(isVisible: destination == .activity) {
+                            ActivityView(store: store, isVisible: destination == .activity).tint(Theme.accent)
+                        }
+                        RetainedDestination(isVisible: destination == .goals) {
+                            GoalsView(store: store).tint(Theme.accent)
+                        }
                     }
                 }.frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity)
             }.navigationSplitViewStyle(.balanced)
@@ -74,5 +75,24 @@ struct MainNavigationView: View {
     private func navigate(_ value: Destination) {
         NSApp.keyWindow?.makeFirstResponder(nil)
         destination = value
+    }
+}
+
+/// Opacity alone leaves AppKit-backed descendants participating in native events.
+/// Keep the host and its state alive, but hide the entire native subtree.
+private struct RetainedDestination<Content: View>: NSViewRepresentable {
+    let isVisible: Bool
+    @ViewBuilder var content: () -> Content
+
+    func makeNSView(context: Context) -> NSHostingView<Content> {
+        let view = NSHostingView(rootView: content())
+        view.sizingOptions = []
+        view.isHidden = !isVisible
+        return view
+    }
+
+    func updateNSView(_ view: NSHostingView<Content>, context: Context) {
+        view.rootView = content()
+        view.isHidden = !isVisible
     }
 }
