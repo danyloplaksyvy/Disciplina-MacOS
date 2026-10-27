@@ -4,7 +4,25 @@
 
 ## Environment
 
-Development host: Apple Silicon macOS, Command Line Tools with Swift 6.3.2, no full Xcode. The initial SwiftUI shell compiled and opened locally. Full app compilation requires missing SwiftUI/SwiftData macro plugins; GitHub Actions supplies Xcode.
+Development host: Apple Silicon macOS. Earlier milestones used Command Line Tools with Swift 6.3.2 and GitHub Actions for full builds. Xcode 27.1 became available locally on October 26; local full builds and 74 unit/persistence tests pass. CI continues validating with Xcode 26.6. Local English-title UI automation requires an English keyboard input source; a run with RussianWin injected only spaces and is not counted as a functional pass.
+
+## v1.1.1 verification — October 27, 2026
+
+- Application/test source `9b44065b791558012907135bae5e203d56d960a8` passed [GitHub Actions run 40461638739](https://github.com/danyloplaksyvy/Disciplina-MacOS/actions/runs/40461638739): **74 unit/persistence tests and 25 UI tests in each appearance**, with zero failures. Coverage includes Activity task/return navigation and Weekly Review, full-row sidebar clicks, appearance editing, persistent popover Undo, and existing goals, capture, login, timer, recurrence and session-editing regressions. The 100-goal/10,000-task UI scenario passed in both appearances.
+- Local Command Line Tools: **61 domain/store tests passed**. Local Xcode 27.1 independently passed **74 unit/persistence tests** and built the final Release source. Coverage includes atomic midnight allocation, DST/year boundaries, millisecond conservation, multi-day corrections and rollback, travel interruption, JSON 1–5 compatibility, malformed allocations, appearance inheritance and deletion feedback. Visual timer ticks do not write persistence or rebuild historical aggregates.
+- Persistence tests cover staged V1–V5 upgrades, WAL snapshots, preserved records and failed activation. The exact downloaded CI app also migrated a fresh private consistent copy of the installed V5 database: **19 tasks, 18 sessions**. Validation succeeded, schema 6 was activated, and the original generation and backup were retained. The live database was untouched; no personal records were committed or uploaded.
+- UI investigation found retained inactive native views interfering with navigation/scrolling. Destinations now retain their SwiftUI state in native hosts that are hidden when inactive. The final Activity test scrolls to a session task, opens details, returns, and switches to Weekly Review. The window host preserves minimum sizing without intrinsic-size resizing; automatic window cascading is disabled after initial centering. Earlier local off-screen-window and non-English-input failures are not counted as passes.
+- Local native inspection used a separate in-memory preview app to check task details, selected-row contrast, calendar/manual-work presentation, Weekly Review labels and goal totals, task return navigation and the appearance editor. Final full UI acceptance was run in CI; local preview checks do not establish installed-app/device acceptance.
+- The clean CI archive at `build/v1.1.1/final/Disciplina-arm64-development.zip` passed `codesign --verify --deep --strict`. It is ad-hoc signed, arm64, **1.1.1, build 6**, with no XCTest framework. Recorded PR merge source: `5075cbec8be1d769a33091fd3baaae64bf956b89`; branch source: `9b44065b791558012907135bae5e203d56d960a8`. SHA-256: `2230227f48987b856a7c669f28b912a38eb4a54e39c5ed27ba45addcce7f923f`. Source metadata and checksum are also in the adjacent `BUILD-INFO.txt`. Earlier candidates are superseded.
+
+### Remaining v1.1.1 device checks
+
+- [ ] Real login, macOS 14 runtime/migration, secondary monitors and other Spaces.
+- [ ] Physical sleep/wake, clock/time-zone changes during live timing, native focus matrix and capture latency.
+- [ ] VoiceOver, increased contrast, Reduce Motion, inactive-window selection and larger text.
+- [ ] Installed-app minimum/maximized layouts, multi-day correction interaction, and native file-dialog export/restore.
+
+Version **1.1.1**, build **6** remains a development build pending device acceptance.
 
 ## v1.1.0 verification — October 23, 2026
 
