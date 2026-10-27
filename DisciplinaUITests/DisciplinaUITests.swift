@@ -29,7 +29,7 @@ final class DisciplinaUITests: XCTestCase {
         XCTAssertTrue(button.waitForExistence(timeout: 5))
         for _ in 0..<12 {
             let frame = button.frame
-            if frame.minY >= pane.frame.minY && frame.maxY <= pane.frame.maxY { break }
+            if button.isHittable { break }
             pane.scroll(byDeltaX: 0, deltaY: frame.midY > pane.frame.midY ? -150 : 150)
         }
         button.click()
@@ -80,7 +80,7 @@ final class DisciplinaUITests: XCTestCase {
         XCTAssertTrue(button.waitForExistence(timeout: 5))
         for _ in 0..<15 {
             let frame = button.frame
-            if frame.minY >= pane.frame.minY && frame.maxY <= pane.frame.maxY { break }
+            if button.isHittable { break }
             pane.scroll(byDeltaX: 0, deltaY: frame.midY > pane.frame.midY ? -180 : 180)
         }
         return button
@@ -203,7 +203,8 @@ final class DisciplinaUITests: XCTestCase {
         app.buttons["Next month"].click(); app.buttons["Today"].click()
         let activityPane = app.scrollViews.containing(.button, identifier: taskLink.identifier).firstMatch
         for _ in 0..<12 {
-            if taskLink.frame.minY >= activityPane.frame.minY && taskLink.frame.maxY <= activityPane.frame.maxY { break }
+            if taskLink.isHittable { break }
+            print("Activity scroll: pane=\(activityPane.frame) task=\(taskLink.frame) bars=\(activityPane.scrollBars.debugDescription)")
             activityPane.scroll(byDeltaX: 0, deltaY: -150)
         }
         taskLink.click()

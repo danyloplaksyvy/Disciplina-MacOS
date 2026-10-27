@@ -51,8 +51,8 @@ struct ActivityView: View {
                 } else {
                     GeometryReader { geometry in
                         if geometry.size.width >= 900 {
-                            HStack(alignment: .top, spacing: 24) { monthGrid.frame(width: geometry.size.width * 0.52); ScrollView { detail }.frame(maxWidth: .infinity) }
-                        } else { ScrollView { VStack(alignment: .leading, spacing: 16) { monthGrid; Divider().padding(.vertical); detail } } }
+                            HStack(alignment: .top, spacing: 24) { keyboardCalendar(monthGrid).frame(width: geometry.size.width * 0.52); ScrollView { detail }.frame(maxWidth: .infinity) }
+                        } else { keyboardCalendar(ScrollView { VStack(alignment: .leading, spacing: 16) { monthGrid; Divider().padding(.vertical); detail } }) }
                     }
                 }
             }
@@ -86,7 +86,10 @@ struct ActivityView: View {
                     }
                 }
             }
-        }.focusable().focused($calendarFocused)
+        }
+    }
+    private func keyboardCalendar<Content: View>(_ content: Content) -> some View {
+        content.focusable().focused($calendarFocused)
             .onKeyPress(.leftArrow) { moveDay(-1); return .handled }
             .onKeyPress(.rightArrow) { moveDay(1); return .handled }
             .onKeyPress(.upArrow) { moveDay(-7); return .handled }
