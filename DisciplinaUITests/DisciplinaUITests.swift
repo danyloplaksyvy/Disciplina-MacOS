@@ -246,6 +246,31 @@ final class DisciplinaUITests: XCTestCase {
         app.buttons["Clear filters"].firstMatch.click()
         XCTAssertTrue(list.staticTexts["Hidden new task"].waitForExistence(timeout: 5))
         XCTAssertTrue(list.staticTexts["Open task"].exists)
+        app.typeKey("f", modifierFlags: .command); taskSearch.typeText("Open")
+        list.staticTexts["Open task"].rightClick(); app.windows["main"].menuItems["Delete"].click()
+        XCTAssertFalse(list.staticTexts["Open task"].exists)
+        app.buttons["Undo"].firstMatch.click()
+        XCTAssertTrue(list.staticTexts["Open task"].waitForExistence(timeout: 5))
+        XCTAssertEqual(taskSearch.value as? String, "Open")
+    }
+
+    func testSearchInResizedCompactWindowKeepsDetailsReadable() {
+        add("Compact search task")
+        let window = app.windows["main"]
+        let corner = window.coordinate(withNormalizedOffset: CGVector(dx: 1, dy: 1)).withOffset(CGVector(dx: -2, dy: -2))
+        corner.press(forDuration: 0.1, thenDragTo: corner.withOffset(CGVector(dx: 780 - window.frame.width, dy: -80)))
+        XCTAssertLessThan(window.frame.width, 1000)
+        XCTAssertTrue(app.menuButtons["compact-navigation"].waitForExistence(timeout: 5))
+        app.typeKey("f", modifierFlags: .command); taskSearch.typeText("Compact")
+        let list = app.outlines["main-task-list"]
+        list.staticTexts["Compact search task"].click()
+        XCTAssertGreaterThanOrEqual(list.frame.width, 360)
+        XCTAssertGreaterThanOrEqual(app.scrollViews["task-details"].frame.width, 300)
+        XCTAssertTrue(taskSearch.isHittable)
+        XCTAssertTrue(app.popUpButtons["task-status-filter"].isHittable)
+        XCTAssertTrue(app.popUpButtons["task-goal-filter"].isHittable)
+        let attachment = XCTAttachment(screenshot: window.screenshot())
+        attachment.name = "compact-task-search"; attachment.lifetime = .keepAlways; add(attachment)
     }
 
     private func openActivity() {

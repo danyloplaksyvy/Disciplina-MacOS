@@ -74,6 +74,23 @@ import Testing
         // Goal names are not search terms, and renaming a goal cannot change UUID matching.
         #expect(TaskQuery(text: "Goal title", goal: .goal(id)).project(groups([successor])).visibleIDs.isEmpty)
     }
+    @Test func goalRenameReassignmentAndRefreshRecoveryKeepSearchAuthoritative() throws {
+        let repo = MemoryRepository(), store = TaskStore(service: TaskService(repository: repo))
+        let goal = try #require(store.saveGoal(id: nil, title: "Original goal", criteria: "An outcome", targetDay: nil))
+        #expect(store.create(title: "Linked work", goalID: goal))
+        let taskID = try #require(store.items.first?.id)
+        let query = TaskQuery(goal: .goal(goal))
+        #expect(store.saveGoal(id: goal, title: "Renamed goal", criteria: "An outcome", targetDay: nil) == goal)
+        #expect(query.project(store.dayGroups).visibleIDs == [taskID])
+        #expect(store.assignGoal(taskID: taskID, goalID: nil))
+        #expect(query.project(store.dayGroups).visibleIDs.isEmpty)
+        repo.failFetchAfterWrite = true
+        #expect(store.rename(id: taskID, title: "Committed title"))
+        #expect(store.unavailable)
+        #expect(TaskQuery(text: "Committed").project(store.dayGroups, unavailable: store.unavailable).unavailable)
+        repo.failFetch = false; repo.failFetchAfterWrite = false; store.reload()
+        #expect(TaskQuery(text: "Committed").project(store.dayGroups, unavailable: store.unavailable).visibleIDs == [taskID])
+    }
     @Test func tenThousandTaskProjectionHasExactCounts() {
         let goals = (0..<100).map { _ in UUID() }
         let values = (0..<10000).map { task("Work \($0)", goal: goals[$0 % 100]) }
