@@ -6,6 +6,26 @@
 
 Development host: Apple Silicon macOS. Earlier milestones used Command Line Tools with Swift 6.3.2 and GitHub Actions for full builds. Xcode 27.1 became available locally on October 26; local full builds and 74 unit/persistence tests pass. CI continues validating with Xcode 26.6. Local English-title UI automation requires an English keyboard input source; a run with RussianWin injected only spaces and is not counted as a functional pass.
 
+## v1.1.2 verification — October 29, 2026
+
+- PR #1 and PR #2 were integrated into main using merge commits. PR #2 was retargeted and revalidated against main in [run 40886407224](https://github.com/danyloplaksyvy/Disciplina-MacOS/actions/runs/40886407224) before merging. Source branches and previous development artifacts were retained. Implementation is in PR #3.
+- Final application/test source: `eeb69372e2ec7c31337b80854e3654295aa3c569`. Local command-line suite: **69 tests passed**. Xcode 27.1: **82 unit/persistence tests passed**, and both test bundles compiled. Search tests cover Unicode/diacritics, whitespace, combined filters, deleted/completed tasks, goal rename/reassignment, recurrence, failed saves and reload-only recovery. Schema V6 and JSON 5 are unchanged.
+- Focused local UI checks passed for combined filters/hidden creation, collapsed-day restoration, navigation/window reopening, and filtered-out details with preserved title drafts. The draft test exposed list Space handling intercepting text editing; list Space/Return commands now yield to editable native text responders. The corrected test passed with the complete draft preserved. The 100-goal/10,000-task navigation/search scenario also passed.
+- Performance on **Apple M4, macOS 26.6.2 (25G83), Xcode 27.1 (27A9275)**: pure search projection averaged approximately **15 ms** across 20 projections of 10,000 tasks. Eight Debug UI input-to-result-draw-pass samples had **139.2 ms median / 192.3 ms maximum**. The **150 ms target is not met consistently**. These are an instrumented draw-pass proxy, not physical-screen latency; Release excludes the instrumentation. No history scan is driven by visual stopwatch ticks.
+- The packaged Release binary migrated a fresh disposable copy of the previously saved private V5 snapshot: **19 tasks and 18 sessions validated**, schema 6 activated, and the original generation plus a backup retained. No personal task contents were uploaded or committed.
+- [GitHub Actions run 40890836325](https://github.com/danyloplaksyvy/Disciplina-MacOS/actions/runs/40890836325) passed: **82 unit/persistence tests and 29 UI tests in each appearance, zero failures**. Both appearances include compact-window search/detail sizing, filtered deletion Undo, draft preservation, Command-F/Escape, day expansion restoration, and existing goals, Activity, capture, simulated login, popover, timer, recurrence and session-editing regressions. CI also produced a separate clean development artifact with its merge-source commit recorded.
+- Clean local Release archive: `build/v1.1.2/final/Disciplina-arm64-development.zip`, **1.1.2, build 7**, arm64, ad-hoc signed. Strict deep signature verification passed; no XCTest framework is bundled. Source is recorded above and in adjacent `BUILD-INFO.txt`. SHA-256: `aca3a03eeffe557f0b149700b58f3b60ab674d2bfd51ea424909d073203b702a`.
+
+### Remaining v1.1.2 acceptance checks
+
+- [ ] Consistent <=150 ms visible search results with 100 goals and 10,000 tasks; the measured Debug maximum exceeds the target.
+- [ ] Real login, macOS 14 runtime, secondary monitors, other Spaces and native full-screen device matrix.
+- [ ] Physical sleep/wake, capture focus/latency and timer recovery on the installed app.
+- [ ] VoiceOver, increased contrast, Reduce Motion, inactive selection and larger text device checks.
+- [ ] Installed-app minimum/default/maximized layouts and native file-dialog export/restore using disposable data.
+
+Version **1.1.2**, build **7** remains a development build pending device acceptance. Live user data was not replaced for these tests.
+
 ## v1.1.1 verification — October 27, 2026
 
 - Application/test source `9b44065b791558012907135bae5e203d56d960a8` passed [GitHub Actions run 40461638739](https://github.com/danyloplaksyvy/Disciplina-MacOS/actions/runs/40461638739): **74 unit/persistence tests and 25 UI tests in each appearance**, with zero failures. Coverage includes Activity task/return navigation and Weekly Review, full-row sidebar clicks, appearance editing, persistent popover Undo, and existing goals, capture, login, timer, recurrence and session-editing regressions. The 100-goal/10,000-task UI scenario passed in both appearances.
