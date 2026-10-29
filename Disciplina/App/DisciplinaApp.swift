@@ -22,6 +22,13 @@ struct DisciplinaApp: App {
                     }
                 }.keyboardShortcut("z", modifiers: [.command, .shift])
             }
+            CommandGroup(after: .textEditing) {
+                Button("Find Tasks") {
+                    guard NSApp.keyWindow?.identifier?.rawValue == "main" else { return }
+                    NotificationCenter.default.post(name: .focusTaskSearch, object: nil)
+                }.keyboardShortcut("f")
+                    .disabled(NSApp.keyWindow?.identifier?.rawValue != "main")
+            }
             CommandGroup(replacing: .newItem) {
                 Button("New Task") {
                     showMain()
