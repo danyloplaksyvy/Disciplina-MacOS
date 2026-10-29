@@ -127,7 +127,7 @@ final class AppDependencies {
     }
     private func observeAnnouncements(_ store: TaskStore) {
         withObservationTracking {
-            let message = store.timer.failure ?? store.errorMessage ?? store.notice
+            let message = store.timer.failure ?? store.errorMessage ?? store.deletionFeedback ?? store.notice
             if let message, message != lastAnnouncement {
                 NSAccessibility.post(element: NSApp!, notification: .announcementRequested,
                                      userInfo: [.announcement: message, .priority: NSAccessibilityPriorityLevel.medium.rawValue])
@@ -152,14 +152,20 @@ final class AppDependencies {
             window.isReleasedWhenClosed = false
             window.contentMinSize = NSSize(width: 760, height: 400)
             window.collectionBehavior = [.fullScreenPrimary]
-            window.contentViewController = NSHostingController(rootView: MainWindowContent(dependencies: self,
+            let hosting = NSHostingController(rootView: MainWindowContent(dependencies: self,
                 openSettings: { [weak self] in self?.openSettings?() }))
+            hosting.sizingOptions = .minSize
+            window.contentViewController = hosting
             // NSHostingController initially proposes its minimum size. Apply the
             // intended initial content size after installing it, once per window.
             let available = (window.screen ?? NSScreen.main)?.visibleFrame.size ?? NSSize(width: 1100, height: 700)
             window.setContentSize(NSSize(width: min(1100, available.width), height: min(700, available.height - 40)))
             window.center()
-            mainWindow = NSWindowController(window: window)
+            let controller = NSWindowController(window: window)
+            // The window is already positioned within the visible screen. AppKit
+            // cascading can otherwise move a new controller below the Dock.
+            controller.shouldCascadeWindows = false
+            mainWindow = controller
         }
         mainWindow?.showWindow(nil)
         mainWindow?.window?.makeKeyAndOrderFront(nil)
@@ -185,10 +191,14 @@ final class AppDependencies {
             (.default, NSApplication.didBecomeActiveNotification),
             (.default, .NSSystemTimeZoneDidChange),
             (.default, .NSSystemClockDidChange),
+            (.default, NSLocale.currentLocaleDidChangeNotification),
             (NSWorkspace.shared.notificationCenter, NSWorkspace.didWakeNotification)]
         for (center, name) in events {
             let observer = center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
-                MainActor.assumeIsolated { self?.calendarEvent() }
+                MainActor.assumeIsolated {
+                    if name == .NSSystemTimeZoneDidChange || name == .NSSystemClockDidChange { self?.store?.timer.timeEnvironmentChanged() }
+                    self?.calendarEvent()
+                }
             }
             calendarObservers.append((center, observer))
         }

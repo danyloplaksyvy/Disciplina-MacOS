@@ -158,7 +158,7 @@ import Testing
         #expect(store.saveMilestone(goalID: goal, id: nil, title: "M"))
         let snapshot = try repo.snapshot()
         let document = BackupDocument(snapshot: snapshot)
-        #expect(document.formatVersion == 4)
+        #expect(document.formatVersion == 5)
         #expect(try BackupDocument.decode(document.encode()).validatedSnapshot() == snapshot)
         for version in 1...3 {
             var json = try #require(JSONSerialization.jsonObject(with: document.encode()) as? [String: Any])

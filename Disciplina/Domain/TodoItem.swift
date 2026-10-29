@@ -15,15 +15,16 @@ struct TodoItem: Identifiable, Equatable, Codable, Sendable {
     var seriesID: UUID?
     var scheduledDay: LocalDay?
     var goalID: UUID?
+    var appearance: TaskAppearance?
     var isCompleted: Bool { status == .completed }
 
     init(id: UUID, title: String, createdAt: Date, updatedAt: Date, completedAt: Date?,
-         status: TaskStatus? = nil, deletedAt: Date? = nil, seriesID: UUID? = nil, scheduledDay: LocalDay? = nil, goalID: UUID? = nil) {
+         status: TaskStatus? = nil, deletedAt: Date? = nil, seriesID: UUID? = nil, scheduledDay: LocalDay? = nil, goalID: UUID? = nil, appearance: TaskAppearance? = nil) {
         self.id = id; self.title = title; self.createdAt = createdAt; self.updatedAt = updatedAt
         self.completedAt = completedAt
         self.status = status ?? (completedAt == nil ? .todo : .completed)
         self.deletedAt = deletedAt
-        self.seriesID = seriesID; self.scheduledDay = scheduledDay; self.goalID = goalID
+        self.seriesID = seriesID; self.scheduledDay = scheduledDay; self.goalID = goalID; self.appearance = appearance
     }
 }
 

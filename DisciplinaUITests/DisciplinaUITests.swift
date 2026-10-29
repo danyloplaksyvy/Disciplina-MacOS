@@ -16,7 +16,9 @@ final class DisciplinaUITests: XCTestCase {
 
     private func add(_ title: String) {
         let field = app.textFields["new-task"]
-        field.click(); field.typeText(title + "\n")
+        field.click(); field.typeText(title)
+        XCTAssertEqual(field.value as? String, title)
+        field.typeKey(.return, modifierFlags: [])
         XCTAssertTrue(app.staticTexts[title].waitForExistence(timeout: 3))
         XCTAssertEqual(field.value as? String, "")
     }
@@ -172,7 +174,79 @@ final class DisciplinaUITests: XCTestCase {
         XCTAssertTrue(app.buttons[label.replacingOccurrences(of: "Start ", with: "Resume ")].waitForExistence(timeout: 10))
         app.buttons["navigate-tasks"].firstMatch.click()
         XCTAssertTrue(app.outlines["main-task-list"].firstMatch.waitForExistence(timeout: 5))
-        XCTAssertEqual(app.statusItems.count, 1)
+        XCTAssertTrue(app.statusItems.firstMatch.waitForExistence(timeout: 5))
+    }
+
+    private func openActivity() {
+        let button = app.buttons["navigate-activity"].firstMatch
+        if button.exists && button.isHittable {
+            // Exercise the trailing empty area, not just the text or symbol.
+            button.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).click()
+        } else {
+            app.menuButtons["compact-navigation"].click(); app.menuItems["Activity"].click()
+        }
+        XCTAssertTrue(app.buttons["Today"].waitForExistence(timeout: 5))
+    }
+
+    func testActivityCalendarWeeklyReviewAndFullRowNavigation() {
+        add("Calendar work")
+        app.outlines["main-task-list"].staticTexts["Calendar work"].click()
+        clickDetailButton("Add time…")
+        let sheet = app.windows["main"].sheets.firstMatch
+        let minutes = sheet.textFields["duration-minutes"]
+        minutes.click(); minutes.typeKey("a", modifierFlags: .command); minutes.typeText("1")
+        sheet.buttons["Save"].click()
+        openActivity()
+        XCTAssertTrue(app.staticTexts["Manual or corrected"].waitForExistence(timeout: 5))
+        let taskLink = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "activity-task-")).firstMatch
+        XCTAssertTrue(taskLink.exists)
+        app.buttons["Next month"].click(); app.buttons["Today"].click()
+        let activityPane = app.scrollViews.containing(.button, identifier: taskLink.identifier).firstMatch
+        for _ in 0..<12 {
+            if taskLink.isHittable { break }
+            print("Activity scroll: pane=\(activityPane.frame) task=\(taskLink.frame) bars=\(activityPane.scrollBars.debugDescription)")
+            activityPane.scroll(byDeltaX: 0, deltaY: -150)
+        }
+        taskLink.click()
+        XCTAssertTrue(app.scrollViews["task-details"].waitForExistence(timeout: 5))
+        app.buttons["Back to Activity"].click()
+        app.radioButtons["Weekly Review"].click()
+        XCTAssertTrue(app.staticTexts["Currently completed during this week"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["This Week"].exists)
+    }
+
+    func testOptionalTaskAppearanceSavesAndCancels() {
+        add("Recognizable task")
+        let list = app.outlines["main-task-list"]
+        list.staticTexts["Recognizable task"].click()
+        clickDetailButton("Appearance…")
+        let sheet = app.windows["main"].sheets.firstMatch
+        sheet.popUpButtons["appearance-symbol"].click(); app.menuItems["Book"].click()
+        sheet.buttons["Cancel"].click()
+        XCTAssertFalse(list.images.matching(NSPredicate(format: "identifier BEGINSWITH %@", "task-symbol-")).firstMatch.exists)
+        clickDetailButton("Appearance…")
+        sheet.popUpButtons["appearance-symbol"].click(); app.menuItems["Book"].click()
+        sheet.popUpButtons["appearance-color"].click(); app.menuItems["Blue"].click()
+        sheet.buttons["Save"].click()
+        XCTAssertTrue(list.images.matching(NSPredicate(format: "identifier BEGINSWITH %@", "task-symbol-")).firstMatch.waitForExistence(timeout: 5))
+    }
+
+    func testPopoverUndoAndDismissedUndoRemainsAvailable() {
+        add("Recover from popover")
+        let list = app.outlines["main-task-list"]
+        list.staticTexts["Recover from popover"].rightClick()
+        app.windows["main"].menuItems["Delete"].click()
+        app.statusItems.firstMatch.click()
+        let popover = app.popovers.firstMatch
+        XCTAssertTrue(popover.buttons["Undo"].waitForExistence(timeout: 5))
+        popover.buttons["Undo"].click()
+        XCTAssertTrue(popover.staticTexts["Recover from popover"].waitForExistence(timeout: 5))
+        app.typeKey(.escape, modifierFlags: [])
+        list.staticTexts["Recover from popover"].rightClick()
+        app.windows["main"].menuItems["Delete"].click()
+        app.buttons["Dismiss deletion feedback"].click()
+        app.typeKey("z", modifierFlags: .command)
+        XCTAssertTrue(list.staticTexts["Recover from popover"].waitForExistence(timeout: 5))
     }
 
     func testLoginLaunchHasStatusItemWithoutMainWindow() {
