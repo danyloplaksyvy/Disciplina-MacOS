@@ -18,7 +18,9 @@ final class SwiftDataTaskRepository: TaskRepository {
         else { throw DataError.invalidSnapshot }
         for task in tasks { if let data = task.scheduledDayData { _ = try JSONDecoder().decode(LocalDay.self, from: data) } }
         let series = try context.fetch(FetchDescriptor<SeriesRecord>()).map { try $0.value() }
-        return TaskSnapshot(tasks: tasks.map(\.item), sessions: sessions.map(\.item), series: series)
+        return TaskSnapshot(tasks: tasks.map(\.item), sessions: sessions.map(\.item), series: series,
+                            goals: try context.fetch(FetchDescriptor<GoalRecord>()).map { try $0.value() },
+                            milestones: try context.fetch(FetchDescriptor<MilestoneRecord>()).map { try $0.value() })
     }
     func insert(_ item: TodoItem) throws {
         var state = try snapshot()
@@ -63,6 +65,24 @@ final class SwiftDataTaskRepository: TaskRepository {
                 if let record = seriesMap[item.id] {
                     if try record.value() != item { record.payload = try JSONEncoder().encode(item) }
                 } else { context.insert(try SeriesRecord(item)) }
+            }
+            let goals = try context.fetch(FetchDescriptor<GoalRecord>())
+            let goalsMap = Dictionary(uniqueKeysWithValues: goals.map { ($0.id, $0) })
+            let goalsIDs = Set(snapshot.goals.map(\.id))
+            for record in goals where !goalsIDs.contains(record.id) { context.delete(record) }
+            for item in snapshot.goals {
+                if let record = goalsMap[item.id] {
+                    if try record.value() != item { record.payload = try JSONEncoder().encode(item) }
+                } else { context.insert(try GoalRecord(item)) }
+            }
+            let milestones = try context.fetch(FetchDescriptor<MilestoneRecord>())
+            let milestonesMap = Dictionary(uniqueKeysWithValues: milestones.map { ($0.id, $0) })
+            let milestonesIDs = Set(snapshot.milestones.map(\.id))
+            for record in milestones where !milestonesIDs.contains(record.id) { context.delete(record) }
+            for item in snapshot.milestones {
+                if let record = milestonesMap[item.id] {
+                    if try record.value() != item { record.payload = try JSONEncoder().encode(item) }
+                } else { context.insert(try MilestoneRecord(item)) }
             }
             try save(context)
         } catch { context.rollback(); throw error }

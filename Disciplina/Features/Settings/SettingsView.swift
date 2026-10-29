@@ -53,10 +53,10 @@ struct SettingsView: View {
                     if let id = permanentID, dependencies.store?.permanentlyDelete(id) == true { NSApp.windows.forEach { $0.undoManager?.removeAllActions() } }
                     permanentID = nil
                 }
-            } message: { Text("This action cannot be undone.") }
+            } message: { Text("The task’s sessions will also be removed from attributed goal totals. This action cannot be undone.") }
             .alert("Replace all local data?", isPresented: Binding(get: { dependencies.pendingRestore != nil }, set: { if !$0 { dependencies.pendingRestore = nil } })) {
                 Button("Cancel", role: .cancel) { dependencies.pendingRestore = nil }
                 Button("Restore", role: .destructive) { dependencies.restoreData() }
-            } message: { Text("The running timer will pause. A local backup will be kept before the selected data replaces your tasks and sessions.") }
+            } message: { Text("The running timer will pause. A local backup will be kept before the selected data replaces your tasks, sessions, recurring series, goals, and milestones.") }
     }
 }

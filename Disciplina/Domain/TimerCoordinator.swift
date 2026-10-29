@@ -144,7 +144,7 @@ final class TimerCoordinator {
             state.tasks[index].status = .inProgress
             state.tasks[index].updatedAt = now.date
             let id = makeID()
-            state.sessions.append(WorkSession(id: id, taskID: taskID, startedAt: now.date, lastCheckpointAt: now.date))
+            state.sessions.append(WorkSession(id: id, taskID: taskID, startedAt: now.date, lastCheckpointAt: now.date, goalIDAtStart: state.tasks[index].goalID))
             return id
         }
     }
@@ -202,6 +202,21 @@ final class TimerCoordinator {
         return receipt
     }
 
+    func assignGoal(taskID: UUID, goalID: UUID?) throws {
+        guard failure == nil else { throw DataError.timerUnavailable }
+        guard running?.taskID != taskID else { throw GoalError.running }
+        var state = try repository.snapshot()
+        guard let index = state.tasks.firstIndex(where: { $0.id == taskID && $0.deletedAt == nil }) else { throw TaskError.notFound }
+        guard goalID == nil || state.goals.contains(where: { $0.id == goalID }) else { throw GoalError.missing }
+        guard state.tasks[index].goalID != goalID else { return }
+        state.tasks[index].goalID = goalID; state.tasks[index].updatedAt = sample().date
+        if let seriesID = state.tasks[index].seriesID,
+           let s = state.series.firstIndex(where: { $0.id == seriesID && $0.enabled && $0.currentTaskID == taskID }) {
+            state.series[s].futureGoalID = goalID; state.series[s].revision = makeID()
+        }
+        try repository.commit(state)
+    }
+
     func setRepeat(taskID: UUID, weekdays: [Int]) throws {
         guard failure == nil else { throw DataError.timerUnavailable }
         var state = try repository.snapshot()
@@ -214,7 +229,7 @@ final class TimerCoordinator {
             state.detachTask(at: t)
             let id = makeID()
             state.tasks[t].seriesID = id
-            state.series.append(RecurrenceSeries(id: id, title: state.tasks[t].title, weekdays: weekdays.sorted(), currentTaskID: taskID, revision: makeID()))
+            state.series.append(RecurrenceSeries(id: id, title: state.tasks[t].title, weekdays: weekdays.sorted(), currentTaskID: taskID, revision: makeID(), futureGoalID: state.tasks[t].goalID))
         }
         state.tasks[t].updatedAt = sample().date
         try state.validate(); try repository.commit(state)
@@ -258,7 +273,7 @@ final class TimerCoordinator {
         guard milliseconds > 0, date.timeIntervalSince1970.isFinite else { throw SessionEditError.invalidDuration }
         try changeSessions(taskID: taskID) { state, _ in
             state.sessions.append(WorkSession(id: makeID(), taskID: taskID, startedAt: date, endedAt: date,
-                accumulatedMilliseconds: milliseconds, lastCheckpointAt: date, endReason: .manuallyAdded, origin: .manual))
+                accumulatedMilliseconds: milliseconds, lastCheckpointAt: date, endReason: .manuallyAdded, origin: .manual, goalIDAtStart: state.tasks.first { $0.id == taskID }?.goalID))
         }
     }
     func editSession(taskID: UUID, sessionID: UUID, milliseconds: Int64) throws {

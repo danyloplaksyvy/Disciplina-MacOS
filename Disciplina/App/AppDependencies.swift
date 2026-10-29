@@ -72,6 +72,20 @@ final class AppDependencies {
                 let location = try StoreLocation(); self.location = location
                 persistence = try location.open()
             }
+            #if DEBUG
+            if testing && ProcessInfo.processInfo.arguments.contains("--seed-goals-performance") {
+                var snapshot = TaskSnapshot()
+                let date = Date(timeIntervalSince1970: 1700000000)
+                for g in 0..<100 {
+                    let goal = Goal(id: UUID(), title: "Performance Goal \(g)", successCriteria: "Verify responsive navigation", createdAt: date, updatedAt: date)
+                    snapshot.goals.append(goal)
+                    for t in 0..<100 {
+                        snapshot.tasks.append(TodoItem(id: UUID(), title: "Work \(g)-\(t)", createdAt: date, updatedAt: date, completedAt: nil, goalID: goal.id))
+                    }
+                }
+                try SwiftDataTaskRepository(context: persistence.container.mainContext).commit(snapshot)
+            }
+            #endif
             install(persistence, testing: testing)
             startupError = nil
         } catch {
@@ -132,7 +146,7 @@ final class AppDependencies {
     }
     func showMain() {
         if mainWindow == nil {
-            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 860, height: 600),
+            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1100, height: 700),
                                   styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
             window.title = "Disciplina"; window.identifier = NSUserInterfaceItemIdentifier("main")
             window.isReleasedWhenClosed = false
@@ -142,7 +156,8 @@ final class AppDependencies {
                 openSettings: { [weak self] in self?.openSettings?() }))
             // NSHostingController initially proposes its minimum size. Apply the
             // intended initial content size after installing it, once per window.
-            window.setContentSize(NSSize(width: 860, height: 600))
+            let available = (window.screen ?? NSScreen.main)?.visibleFrame.size ?? NSSize(width: 1100, height: 700)
+            window.setContentSize(NSSize(width: min(1100, available.width), height: min(700, available.height - 40)))
             window.center()
             mainWindow = NSWindowController(window: window)
         }
@@ -234,7 +249,7 @@ private struct MainWindowContent: View {
     var body: some View {
         Group {
             if let store = dependencies.store {
-                MainTaskWindowView(store: store, openSettings: openSettings).id(ObjectIdentifier(store))
+                MainNavigationView(store: store, openSettings: openSettings).id(ObjectIdentifier(store))
             } else { StartupFailureView(dependencies: dependencies) }
         }
     }
