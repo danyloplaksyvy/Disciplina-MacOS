@@ -175,6 +175,102 @@ final class DisciplinaUITests: XCTestCase {
         app.buttons["navigate-tasks"].firstMatch.click()
         XCTAssertTrue(app.outlines["main-task-list"].firstMatch.waitForExistence(timeout: 5))
         XCTAssertTrue(app.statusItems.firstMatch.waitForExistence(timeout: 5))
+        app.typeKey("f", modifierFlags: .command)
+        XCTAssertTrue(taskSearch.waitForExistence(timeout: 5))
+        taskSearch.typeText("Work 42-")
+        XCTAssertTrue(app.staticTexts["100 of 10000 tasks · Local storage"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.outlines["main-task-list"].staticTexts["Work 42-0"].exists)
+    }
+
+    private var taskSearch: XCUIElement { app.searchFields["task-search"].firstMatch }
+
+    func testSearchRestoresDayExpansionAndSurvivesNavigationAndWindowReopen() {
+        add("Alpha task"); add("Beta task")
+        let list = app.outlines["main-task-list"]
+        list.buttons["Collapse Today"].click()
+        app.typeKey("f", modifierFlags: .command)
+        XCTAssertTrue(taskSearch.waitForExistence(timeout: 5))
+        taskSearch.typeText("alpha")
+        XCTAssertTrue(list.staticTexts["Alpha task"].waitForExistence(timeout: 5))
+        XCTAssertFalse(list.staticTexts["Beta task"].exists)
+        openGoals()
+        app.typeKey("f", modifierFlags: .command)
+        XCTAssertEqual(taskSearch.value as? String, "alpha")
+        app.windows["main"].buttons[XCUIIdentifierCloseWindow].click()
+        app.typeKey("o", modifierFlags: .command)
+        XCTAssertTrue(taskSearch.waitForExistence(timeout: 5))
+        XCTAssertEqual(taskSearch.value as? String, "alpha")
+        taskSearch.click(); taskSearch.typeKey(.escape, modifierFlags: [])
+        XCTAssertEqual(taskSearch.value as? String, "")
+        XCTAssertTrue(list.buttons["Expand Today"].exists)
+        XCTAssertFalse(list.staticTexts["Alpha task"].exists)
+        taskSearch.typeKey(.escape, modifierFlags: [])
+        list.buttons["Expand Today"].click()
+        XCTAssertTrue(list.staticTexts["Beta task"].exists)
+    }
+
+    func testSearchKeepsHiddenDetailsAndInlineDraft() {
+        add("Alpha original"); add("Beta task")
+        let list = app.outlines["main-task-list"]
+        list.staticTexts["Alpha original"].click()
+        list.staticTexts["Alpha original"].rightClick()
+        app.menuItems["Edit title"].click()
+        let editor = app.textFields["edit-task"]
+        editor.click(); editor.typeKey("a", modifierFlags: .command); editor.typeText("Unfinished title")
+        XCTAssertEqual(editor.value as? String, "Unfinished title")
+        app.typeKey("f", modifierFlags: .command); taskSearch.typeText("Beta")
+        XCTAssertTrue(app.staticTexts["filtered-details-notice"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.scrollViews["task-details"].staticTexts["Alpha original"].exists)
+        XCTAssertFalse(editor.exists)
+        taskSearch.typeKey(.escape, modifierFlags: [])
+        XCTAssertTrue(editor.waitForExistence(timeout: 5))
+        XCTAssertEqual(editor.value as? String, "Unfinished title")
+        app.buttons["Cancel"].firstMatch.click()
+        XCTAssertTrue(list.staticTexts["Alpha original"].exists)
+    }
+
+    func testCombinedFiltersAndHiddenCreation() {
+        add("Finished task"); add("Open task")
+        let list = app.outlines["main-task-list"]
+        list.buttons["Complete Finished task"].click()
+        app.popUpButtons["task-status-filter"].click(); app.menuItems["Completed"].click()
+        XCTAssertTrue(list.staticTexts["Finished task"].exists)
+        XCTAssertFalse(list.staticTexts["Open task"].exists)
+        app.popUpButtons["task-goal-filter"].click(); app.menuItems["Unassigned"].click()
+        app.typeKey("f", modifierFlags: .command); taskSearch.typeText("Finished")
+        XCTAssertTrue(list.staticTexts["Finished task"].exists)
+        let input = app.textFields["new-task"]
+        input.click(); input.typeText("Hidden new task"); input.typeKey(.return, modifierFlags: [])
+        XCTAssertTrue(app.otherElements["filtered-creation-notice"].exists || app.staticTexts["Created “Hidden new task”. It is hidden by the current filters."].waitForExistence(timeout: 5))
+        XCTAssertFalse(list.staticTexts["Hidden new task"].exists)
+        app.buttons["Clear filters"].firstMatch.click()
+        XCTAssertTrue(list.staticTexts["Hidden new task"].waitForExistence(timeout: 5))
+        XCTAssertTrue(list.staticTexts["Open task"].exists)
+        app.typeKey("f", modifierFlags: .command); taskSearch.typeText("Open")
+        list.staticTexts["Open task"].rightClick(); app.windows["main"].menuItems["Delete"].click()
+        XCTAssertFalse(list.staticTexts["Open task"].exists)
+        app.buttons["Undo"].firstMatch.click()
+        XCTAssertTrue(list.staticTexts["Open task"].waitForExistence(timeout: 5))
+        XCTAssertEqual(taskSearch.value as? String, "Open")
+    }
+
+    func testSearchInResizedCompactWindowKeepsDetailsReadable() {
+        add("Compact search task")
+        let window = app.windows["main"]
+        let corner = window.coordinate(withNormalizedOffset: CGVector(dx: 1, dy: 1)).withOffset(CGVector(dx: -2, dy: -2))
+        corner.press(forDuration: 0.1, thenDragTo: corner.withOffset(CGVector(dx: 780 - window.frame.width, dy: -80)))
+        XCTAssertLessThan(window.frame.width, 1000)
+        XCTAssertTrue(app.menuButtons["compact-navigation"].waitForExistence(timeout: 5))
+        app.typeKey("f", modifierFlags: .command); taskSearch.typeText("Compact")
+        let list = app.outlines["main-task-list"]
+        list.staticTexts["Compact search task"].click()
+        XCTAssertGreaterThanOrEqual(list.frame.width, 360)
+        XCTAssertGreaterThanOrEqual(app.scrollViews["task-details"].frame.width, 300)
+        XCTAssertTrue(taskSearch.isHittable)
+        XCTAssertTrue(app.popUpButtons["task-status-filter"].isHittable)
+        XCTAssertTrue(app.popUpButtons["task-goal-filter"].isHittable)
+        let attachment = XCTAttachment(screenshot: window.screenshot())
+        attachment.name = "compact-task-search"; attachment.lifetime = .keepAlways; add(attachment)
     }
 
     private func openActivity() {

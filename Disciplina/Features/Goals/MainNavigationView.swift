@@ -64,6 +64,12 @@ struct MainNavigationView: View {
                     if geometry.size.width >= 1000 { manuallyHidden = value == .detailOnly }
                     else if value != .detailOnly { visibility = .detailOnly }
                 }
+                .onReceive(NotificationCenter.default.publisher(for: .focusTaskSearch)) { _ in
+                    if destination != .tasks {
+                        navigate(.tasks)
+                        DispatchQueue.main.async { NotificationCenter.default.post(name: .focusTaskSearch, object: nil) }
+                    }
+                }
                 .onReceive(NotificationCenter.default.publisher(for: .focusNewTask)) { _ in
                     if destination != .tasks {
                         navigate(.tasks)

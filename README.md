@@ -32,6 +32,12 @@ Open **Activity** for a monthly calendar and Weekly Review. New timer sessions p
 
 Deletion feedback includes Undo in the main window and menu bar popover. Dismissing it keeps Command-Z available. Optional task appearance lives in details; current recurring tasks pass their symbol and color to future occurrences.
 
+## Task search — v1.1.2
+
+In **Tasks**, use **Command-F** to search titles, including completed tasks. Combine search with status and goal filters. Matching ignores case and accents; deleted tasks remain in Data & Recovery. **Clear filters** restores the full list and previous day expansion choices.
+
+Filtering keeps open details and unfinished inline title edits. A hidden task's details explain why it is outside the results. Creating a task never inherits filters; a confirmation appears if the new task is hidden. Escape clears search text, then returns focus to the task list. Search/filter choices last for the app session.
+
 ## Development
 
 Open `Disciplina.xcodeproj` in Xcode 26 or newer with Swift 6.2 or newer. Select the **Disciplina** scheme and **My Mac**. The project uses ad-hoc signing and requires no paid Apple Developer membership for development builds. KeyboardShortcuts 3.1.0 is the only application dependency; its exact resolution is committed in the Xcode workspace.

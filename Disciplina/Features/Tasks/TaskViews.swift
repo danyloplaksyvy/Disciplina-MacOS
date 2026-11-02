@@ -1,4 +1,5 @@
 import SwiftUI
+import Observation
 
 struct StoreErrorView: View {
     let store: TaskStore
@@ -18,6 +19,7 @@ struct TaskInputView: View {
     let focusToken: Int
     var cancel: () -> Void = {}
     var goalID: UUID? = nil
+    var created: (String) -> Void = { _ in }
     @State private var title = ""
     var body: some View {
         HStack {
@@ -27,7 +29,7 @@ struct TaskInputView: View {
                 .disabled(title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || store.unavailable)
         }
     }
-    private func add() { if store.create(title: title, goalID: goalID) { title = "" } }
+    private func add() { if store.create(title: title, goalID: goalID) { let saved = title.trimmingCharacters(in: .whitespacesAndNewlines); title = ""; created(saved) } }
 }
 
 struct TimerControls: View {
@@ -47,6 +49,19 @@ struct TimerControls: View {
     }
 }
 
+@MainActor @Observable final class TaskTitleDraft {
+    var editing = false
+    var text = ""
+}
+
+@MainActor final class TaskTitleDrafts {
+    private var values: [UUID: TaskTitleDraft] = [:]
+    func draft(for id: UUID) -> TaskTitleDraft {
+        if let value = values[id] { return value }
+        let value = TaskTitleDraft(); values[id] = value; return value
+    }
+}
+
 struct TaskRowView: View {
     let item: TodoItem
     let store: TaskStore
@@ -59,10 +74,12 @@ struct TaskRowView: View {
     }
     @State private var recurringDelete = false
     var details: () -> Void = {}
-    @State private var editing = false
-    @State private var draft = ""
+    var preservedDraft: TaskTitleDraft? = nil
+    @State private var localDraft = TaskTitleDraft()
+    private var editor: TaskTitleDraft { preservedDraft ?? localDraft }
     @FocusState private var editingFocused: Bool
     var body: some View {
+        @Bindable var editor = self.editor
         HStack(spacing: 10) {
             Button { store.setCompleted(id: item.id, isCompleted: !item.isCompleted) } label: {
                 Image(systemName: item.isCompleted ? "checkmark.circle.fill" : "circle").font(.title3)
@@ -72,15 +89,15 @@ struct TaskRowView: View {
             if let appearance = item.appearance, let symbol = appearance.symbol {
                 Image(systemName: symbol).foregroundStyle(selected ? rowColor : appearance.color).accessibilityLabel(symbol.replacingOccurrences(of: ".", with: " ")).accessibilityIdentifier("task-symbol-\(item.id)")
             }
-            if editing {
-                TextField("Task title", text: $draft).foregroundStyle(Color(nsColor: .textColor)).tint(Theme.accent).focused($editingFocused).onSubmit(save)
-                    .onExitCommand { editing = false }.accessibilityIdentifier("edit-task")
+            if editor.editing {
+                TextField("Task title", text: $editor.text).foregroundStyle(Color(nsColor: .textColor)).tint(Theme.accent).focused($editingFocused).onSubmit(save)
+                    .onExitCommand { editor.editing = false }.accessibilityIdentifier("edit-task")
                 Button("Save", action: save)
-                Button("Cancel") { editing = false }
+                Button("Cancel") { editor.editing = false }
             } else {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(item.title).strikethrough(item.isCompleted)
-                        .onTapGesture(count: 2) { if !compact { draft = item.title; editing = true; editingFocused = true } }
+                        .onTapGesture(count: 2) { if !compact { editor.text = item.title; editor.editing = true; editingFocused = true } }
                         .onTapGesture { if !compact { details() } }
                         .foregroundStyle(selected ? rowColor : item.isCompleted ? Color.secondary : Color.primary)
                         .lineLimit(2).truncationMode(.tail).help(item.title)
@@ -109,7 +126,7 @@ struct TaskRowView: View {
     }
     @ViewBuilder private var actions: some View {
         Button("Open details", action: details)
-        Button("Edit title") { draft = item.title; editing = true; editingFocused = true }
+        Button("Edit title") { editor.text = item.title; editor.editing = true; editingFocused = true }
         Menu("Change status") {
             ForEach(TaskStatus.allCases, id: \.self) { status in
                 Button(status.title) { store.setStatus(item.id, status) }
@@ -123,7 +140,7 @@ struct TaskRowView: View {
     private func delete(_ disposition: RecurringDeletion) {
         if store.delete(id: item.id, disposition: disposition) { NSApp.keyWindow?.makeFirstResponder(nil) }
     }
-    private func save() { if store.rename(id: item.id, title: draft) { editing = false } }
+    private func save() { if store.rename(id: item.id, title: editor.text) { editor.editing = false } }
 }
 
 struct TaskDetailsView: View {
@@ -224,6 +241,12 @@ struct MainTaskWindowView: View {
     let store: TaskStore
     var openSettings: () -> Void = {}
     @State private var focusToken = 0
+    @State private var searchFocusToken = 0
+    @State private var resultRevision = 0
+    @State private var query = TaskQuery()
+    @State private var results = TaskSearchResult(groups: [], visibleIDs: [], totalCount: 0, unavailable: false)
+    @State private var hiddenCreationTitle: String?
+    @State private var titleDrafts = TaskTitleDrafts()
     @State private var selection: UUID?
     @State private var detailID: UUID?
     @State private var collapsedDays: Set<LocalDay> = []
@@ -236,13 +259,29 @@ struct MainTaskWindowView: View {
                 Spacer()
                 Button(action: openSettings) { Image(systemName: "gearshape") }.help("Settings").accessibilityLabel("Settings")
             }
-            TaskInputView(store: store, focusToken: focusToken)
+            TaskInputView(store: store, focusToken: focusToken, created: { title in
+                hiddenCreationTitle = query.matches(title: title, status: .todo, goalID: nil) ? nil : title
+            })
+            searchControls
+            if let title = hiddenCreationTitle, query.isActive {
+                HStack {
+                    Text("Created “\(title)”. It is hidden by the current filters.").font(.callout)
+                    Button("Clear filters", action: clearFilters)
+                    Button { hiddenCreationTitle = nil } label: { Image(systemName: "xmark") }
+                        .buttonStyle(.plain).accessibilityLabel("Dismiss creation message")
+                }.accessibilityIdentifier("filtered-creation-notice")
+            }
             StoreErrorView(store: store)
             TaskDetailSplit(showsDetails: store.items.contains { $0.id == detailID }) {
-                List(selection: $selection) {
-                    ForEach(store.dayGroups) { day in
+                List(selection: Binding<UUID?>(get: {
+                    selection.flatMap { results.visibleIDs.contains($0) ? $0 : nil }
+                }, set: { id in
+                    // Removing a row due to a filter must not close its editor.
+                    if let id { selection = id; detailID = id }
+                })) {
+                    ForEach(results.groups) { day in
                         Section {
-                            if !collapsedDays.contains(day.id) {
+                            if query.isActive || !collapsedDays.contains(day.id) {
                                 group("In Progress", day.inProgress)
                                 group("To Do", day.todo)
                                 group("Completed", day.completed)
@@ -252,34 +291,92 @@ struct MainTaskWindowView: View {
                                 if collapsedDays.contains(day.id) { collapsedDays.remove(day.id) }
                                 else { collapsedDays.insert(day.id) }
                             } label: {
-                                Label(day.title, systemImage: collapsedDays.contains(day.id) ? "chevron.right" : "chevron.down")
-                            }.buttonStyle(.plain).accessibilityLabel("\(collapsedDays.contains(day.id) ? "Expand" : "Collapse") \(day.title)")
+                                Label(day.title, systemImage: !query.isActive && collapsedDays.contains(day.id) ? "chevron.right" : "chevron.down")
+                            }.buttonStyle(.plain).disabled(query.isActive).accessibilityLabel("\(!query.isActive && collapsedDays.contains(day.id) ? "Expand" : "Collapse") \(day.title)")
                         }
                     }
                 }.animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: store.structureRevision).listStyle(.inset).focused($listFocused).accessibilityIdentifier("main-task-list")
                     .onKeyPress(.space) {
-                        guard listFocused, let item = store.items.first(where: { $0.id == selection }) else { return .ignored }
+                        guard listFocused, (NSApp.keyWindow?.firstResponder as? NSTextView)?.isEditable != true, !store.unavailable, let selection, results.visibleIDs.contains(selection), let item = store.items.first(where: { $0.id == selection }) else { return .ignored }
                         store.setCompleted(id: item.id, isCompleted: !item.isCompleted); return .handled
                     }
                     .onKeyPress(.return) {
-                        guard listFocused, selection != nil else { return .ignored }
+                        guard listFocused, (NSApp.keyWindow?.firstResponder as? NSTextView)?.isEditable != true, !store.unavailable, let selection, results.visibleIDs.contains(selection) else { return .ignored }
                         detailID = selection; return .handled
                     }
-                    .onChange(of: selection) { detailID = selection }
+                    .overlay {
+                        if results.unavailable { Text("Task results are unavailable until recovery succeeds.").foregroundStyle(.secondary) }
+                        else if results.visibleIDs.isEmpty {
+                            VStack(spacing: 8) {
+                                Text(query.isActive ? "No tasks match these filters." : "No tasks yet.").foregroundStyle(.secondary)
+                                if query.isActive { Button("Clear filters", action: clearFilters) }
+                            }
+                        }
+                    }
             } details: {
                 if let item = store.items.first(where: { $0.id == detailID }) {
-                    TaskDetailsView(item: item, store: store, close: { detailID = nil }).id(item.id)
+                    VStack(alignment: .leading, spacing: 8) {
+                        if !results.unavailable && !results.visibleIDs.contains(item.id) {
+                            Text("This task is outside the current filters").font(.callout).foregroundStyle(.secondary)
+                                .accessibilityIdentifier("filtered-details-notice")
+                        }
+                        TaskDetailsView(item: item, store: store, close: { detailID = nil }).id(item.id)
+                    }
                 }
             }
-            Text("\(store.items.count) tasks · Local storage").font(.caption).foregroundStyle(.secondary)
+            Text(results.countLabel + " · Local storage").accessibilityIdentifier("task-result-count").font(.caption).foregroundStyle(.secondary)
+                #if DEBUG
+                .background(SearchResultDrawProbe(revision: resultRevision).allowsHitTesting(false).accessibilityHidden(true))
+                #endif
         }.padding(24).frame(minWidth: 760, minHeight: 400).tint(Theme.accent)
             .onReceive(NotificationCenter.default.publisher(for: .focusNewTask)) { _ in focusToken += 1 }
+            .onReceive(NotificationCenter.default.publisher(for: .focusTaskSearch)) { _ in searchFocusToken += 1 }
+            .onChange(of: ObjectIdentifier(store)) { _, _ in
+                selection = nil; detailID = nil; titleDrafts = TaskTitleDrafts()
+                collapsedDays = []; clearFilters(); rebuildResults()
+            }
+            .onChange(of: query) { _, _ in rebuildResults() }
+            .onChange(of: store.dayGroups, initial: true) { _, _ in rebuildResults() }
+            .onChange(of: store.unavailable) { _, _ in rebuildResults() }
+            .onChange(of: store.goals.map(\.id)) { _, ids in
+                if case .goal(let id) = query.goal, !ids.contains(id) { query.goal = .all }
+            }
+    }
+    private func rebuildResults() {
+        results = query.project(store.dayGroups, unavailable: store.unavailable)
+        resultRevision += 1
+        if let title = hiddenCreationTitle, query.matches(title: title, status: .todo, goalID: nil) { hiddenCreationTitle = nil }
+    }
+    private func clearFilters() { query = TaskQuery(); hiddenCreationTitle = nil }
+    private func focusList() { NSApp.keyWindow?.makeFirstResponder(nil); listFocused = true }
+    private var searchControls: some View {
+        HStack(spacing: 10) {
+            TaskSearchField(text: $query.text, focusToken: searchFocusToken, escape: {
+                if !query.text.isEmpty { query.text = "" } else { focusList() }
+            }, enter: focusList).frame(minWidth: 140, maxWidth: .infinity).frame(height: 26)
+            Picker("Status", selection: $query.status) {
+                ForEach(TaskQuery.Status.allCases) { Text($0.rawValue).tag($0) }
+            }.labelsHidden().frame(width: 145).accessibilityLabel("Filter by status").accessibilityIdentifier("task-status-filter")
+            Picker("Goal", selection: $query.goal) {
+                Text("All goals").tag(TaskQuery.GoalFilter.all)
+                Text("Unassigned").tag(TaskQuery.GoalFilter.unassigned)
+                ForEach(GoalStatus.allCases, id: \.self) { status in
+                    Section(status.title) {
+                        ForEach(store.goals(in: status)) { goal in Text(goal.title).tag(TaskQuery.GoalFilter.goal(goal.id)) }
+                    }
+                }
+            }.labelsHidden().frame(width: 180).accessibilityLabel("Filter by goal").accessibilityIdentifier("task-goal-filter")
+            if query.isActive {
+                Button(action: clearFilters) { Image(systemName: "line.3.horizontal.decrease.circle.fill") }
+                    .help("Clear filters").accessibilityLabel("Clear filters")
+            }
+        }
     }
     @ViewBuilder private func group(_ title: String, _ items: [TodoItem]) -> some View {
         if !items.isEmpty {
         Section("\(title) · \(items.count)") {
             ForEach(items) { item in
-                TaskRowView(item: item, store: store, selected: selection == item.id, selectionFocused: listFocused, details: { selection = item.id; detailID = item.id; listFocused = true }).tag(item.id)
+                TaskRowView(item: item, store: store, selected: selection == item.id, selectionFocused: listFocused, details: { selection = item.id; detailID = item.id; listFocused = true }, preservedDraft: titleDrafts.draft(for: item.id)).tag(item.id)
                     .transition(reduceMotion ? .identity : .opacity.combined(with: .move(edge: .top)))
             }
         }
@@ -363,5 +460,6 @@ private struct QuickActionsLayout: Layout {
 }
 
 extension Notification.Name {
+    static let focusTaskSearch = Notification.Name("Disciplina.focusTaskSearch")
     static let focusNewTask = Notification.Name("Disciplina.focusNewTask")
 }
