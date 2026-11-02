@@ -58,6 +58,25 @@ final class DisciplinaUITests: XCTestCase {
         XCTAssertTrue(list.staticTexts["Existing work"].exists)
     }
 
+    func testTodayReorderingAndCompactDetails() {
+        app.buttons["navigate-today"].firstMatch.click()
+        add("First plan"); add("Second plan")
+        let list = app.outlines["today-task-list"]
+        XCTAssertLessThan(list.staticTexts["First plan"].frame.minY, list.staticTexts["Second plan"].frame.minY)
+        list.staticTexts["Second plan"].rightClick()
+        app.windows["main"].menuItems["Move Up"].click()
+        XCTAssertLessThan(list.staticTexts["Second plan"].frame.minY, list.staticTexts["First plan"].frame.minY)
+        let window = app.windows["main"]
+        let corner = window.coordinate(withNormalizedOffset: CGVector(dx: 1, dy: 1)).withOffset(CGVector(dx: -2, dy: -2))
+        corner.press(forDuration: 0.1, thenDragTo: corner.withOffset(CGVector(dx: 780 - window.frame.width, dy: -80)))
+        XCTAssertTrue(app.menuButtons["compact-navigation"].waitForExistence(timeout: 5))
+        list.staticTexts["First plan"].click()
+        XCTAssertGreaterThanOrEqual(list.frame.width, 360)
+        XCTAssertGreaterThanOrEqual(app.scrollViews["task-details"].frame.width, 300)
+        let attachment = XCTAttachment(screenshot: window.screenshot())
+        attachment.name = "today-compact-details"; attachment.lifetime = .keepAlways; add(attachment)
+    }
+
     private func add(_ title: String) {
         let field = app.textFields["new-task"]
         field.click(); field.typeText(title)
