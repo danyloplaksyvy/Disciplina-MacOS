@@ -344,7 +344,7 @@ final class DisciplinaUITests: XCTestCase {
         } else {
             app.menuButtons["compact-navigation"].click(); app.menuItems["Activity"].click()
         }
-        XCTAssertTrue(app.buttons["Today"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["activity-current-period"].waitForExistence(timeout: 5))
     }
 
     func testActivityCalendarWeeklyReviewAndFullRowNavigation() {
@@ -359,7 +359,7 @@ final class DisciplinaUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Manual or corrected"].waitForExistence(timeout: 5))
         let taskLink = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "activity-task-")).firstMatch
         XCTAssertTrue(taskLink.exists)
-        app.buttons["Next month"].click(); app.buttons["Today"].click()
+        app.buttons["Next month"].click(); app.buttons["activity-current-period"].click()
         let activityPane = app.scrollViews.containing(.button, identifier: taskLink.identifier).firstMatch
         for _ in 0..<12 {
             if taskLink.isHittable { break }
