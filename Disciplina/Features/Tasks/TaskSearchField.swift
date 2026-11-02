@@ -51,7 +51,7 @@ struct TaskSearchField: NSViewRepresentable {
         init(_ parent: TaskSearchField) { self.parent = parent }
         @objc func changed(_ field: NSSearchField) {
             guard parent.text != field.stringValue else { return }
-            #if DEBUG
+            #if DEBUG || SEARCH_PROFILING
             SearchLatency.begin()
             #endif
             parent.text = field.stringValue
@@ -71,7 +71,7 @@ struct TaskSearchField: NSViewRepresentable {
     }
 }
 
-#if DEBUG
+#if DEBUG || SEARCH_PROFILING
 /// Opt-in local test instrumentation. Records durations only, never queries or task data.
 @MainActor private enum SearchLatency {
     static var started: ContinuousClock.Instant?

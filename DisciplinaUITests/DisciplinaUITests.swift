@@ -9,10 +9,54 @@ final class DisciplinaUITests: XCTestCase {
         app = XCUIApplication()
         app.launchArguments = ["--ui-testing"]
         app.launch()
+        XCTAssertTrue(app.outlines["today-task-list"].waitForExistence(timeout: 10))
+        app.buttons["navigate-tasks"].firstMatch.click()
         XCTAssertTrue(app.textFields["new-task"].waitForExistence(timeout: 10))
     }
 
     override func tearDownWithError() throws { app.terminate() }
+
+    func testTodayCreationCompletionRemovalAndUndo() {
+        app.buttons["navigate-today"].firstMatch.click()
+        let list = app.outlines["today-task-list"]
+        add("Plan work")
+        XCTAssertTrue(list.staticTexts["Plan work"].exists)
+        list.buttons["Complete Plan work"].click()
+        XCTAssertTrue(app.buttons["Expand planned completed"].waitForExistence(timeout: 5))
+        app.buttons["Expand planned completed"].click()
+        list.buttons["Reopen Plan work"].click()
+        list.staticTexts["Plan work"].click()
+        clickDetailButton("Remove from plan")
+        XCTAssertFalse(list.staticTexts["Plan work"].exists)
+        XCTAssertTrue(app.scrollViews["task-details"].staticTexts["Plan work"].exists)
+        clickDetailButton("Add to Today")
+        XCTAssertTrue(list.staticTexts["Plan work"].waitForExistence(timeout: 5))
+        app.buttons["Close details"].click()
+        list.staticTexts["Plan work"].rightClick()
+        app.windows["main"].menuItems["Delete"].click()
+        XCTAssertFalse(list.staticTexts["Plan work"].exists)
+        app.buttons["Undo"].firstMatch.click()
+        XCTAssertTrue(list.staticTexts["Plan work"].waitForExistence(timeout: 5))
+    }
+
+    func testTodayPickerAndKeyboardSearchPreserveDetails() {
+        add("Existing work")
+        app.buttons["navigate-today"].firstMatch.click()
+        XCTAssertFalse(app.outlines["today-task-list"].staticTexts["Existing work"].exists)
+        app.buttons["Add existing task…"].click()
+        let sheet = app.sheets.firstMatch
+        sheet.searchFields["task-search"].typeText("existing")
+        sheet.buttons["Add Existing work to Today"].click()
+        let list = app.outlines["today-task-list"]
+        XCTAssertTrue(list.staticTexts["Existing work"].waitForExistence(timeout: 5))
+        list.staticTexts["Existing work"].click()
+        app.typeKey("f", modifierFlags: .command)
+        XCTAssertTrue(app.outlines["main-task-list"].waitForExistence(timeout: 5))
+        taskSearch.typeText("Existing")
+        app.buttons["navigate-today"].firstMatch.click()
+        XCTAssertTrue(app.scrollViews["task-details"].staticTexts["Existing work"].exists)
+        XCTAssertTrue(list.staticTexts["Existing work"].exists)
+    }
 
     private func add(_ title: String) {
         let field = app.textFields["new-task"]
@@ -499,6 +543,8 @@ final class DisciplinaUITests: XCTestCase {
         app.terminate()
         app.launchArguments = ["--ui-testing", "--enable-test-shortcut"]
         app.launch()
+        XCTAssertTrue(app.outlines["today-task-list"].waitForExistence(timeout: 10))
+        app.buttons["navigate-tasks"].firstMatch.click()
         XCTAssertTrue(app.textFields["new-task"].waitForExistence(timeout: 10))
         let finder = XCUIApplication(bundleIdentifier: "com.apple.finder")
         finder.activate()

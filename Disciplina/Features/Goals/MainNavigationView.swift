@@ -3,8 +3,8 @@ import SwiftUI
 struct MainNavigationView: View {
     let store: TaskStore
     let openSettings: () -> Void
-    private enum Destination: String, CaseIterable { case tasks = "Tasks", goals = "Goals", activity = "Activity" }
-    @State private var destination: Destination = .tasks
+    private enum Destination: String, CaseIterable { case today = "Today", tasks = "Tasks", goals = "Goals", activity = "Activity" }
+    @State private var destination: Destination = .today
     @State private var visibility: NavigationSplitViewVisibility = .all
     @State private var manuallyHidden = false
     var body: some View {
@@ -13,7 +13,7 @@ struct MainNavigationView: View {
                 List {
                     ForEach(Destination.allCases, id: \.self) { value in
                         Button { navigate(value) } label: {
-                            Label(value.rawValue, systemImage: value == .tasks ? "checklist" : value == .goals ? "target" : "calendar")
+                            Label(value.rawValue, systemImage: value == .today ? "sun.max" : value == .tasks ? "checklist" : value == .goals ? "target" : "calendar")
                                 .frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 5).contentShape(Rectangle())
                         }.buttonStyle(.plain).listRowBackground(destination == value ? Theme.accent.opacity(0.16) : Color.clear)
                             .accessibilityIdentifier("navigate-\(value.rawValue.lowercased())")
@@ -26,6 +26,7 @@ struct MainNavigationView: View {
                     if visibility == .detailOnly {
                         HStack {
                             Menu(destination.rawValue) {
+                                Button("Today") { navigate(.today) }
                                 Button("Tasks") { navigate(.tasks) }
                                 Button("Goals") { navigate(.goals) }
                                 Button("Activity") { navigate(.activity) }
@@ -45,6 +46,9 @@ struct MainNavigationView: View {
                     // Each destination keeps its SwiftUI state in a retained native host.
                     // Native hiding also removes embedded scroll views from hit testing.
                     ZStack {
+                        RetainedDestination(isVisible: destination == .today) {
+                            TodayView(store: store).tint(Theme.accent)
+                        }
                         RetainedDestination(isVisible: destination == .tasks) {
                             MainTaskWindowView(store: store, openSettings: openSettings).tint(Theme.accent)
                         }

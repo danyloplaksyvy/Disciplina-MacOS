@@ -74,7 +74,7 @@ import Testing
         #expect(repo.sessions[0].allocations?.first?.provenance == .manual)
         let snapshot = try repo.snapshot()
         let document = try BackupDocument.decode(BackupDocument(snapshot: snapshot).encode())
-        #expect(document.formatVersion == 5)
+        #expect(document.formatVersion == 6)
         #expect(try document.validatedSnapshot() == snapshot)
         let old = try document.encode()
         var json = try #require(JSONSerialization.jsonObject(with: old) as? [String: Any]); json["formatVersion"] = 4

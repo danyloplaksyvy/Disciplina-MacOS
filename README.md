@@ -62,3 +62,9 @@ See [v1.1.1 engineering notes](docs/V1.1.1-IMPLEMENTATION.md), [v1.1.0 engineeri
 ## Distribution and licensing
 
 Personal development builds only. Public signing, notarization, Intel release builds, and App Store distribution are deferred. No open-source license has been selected; public visibility alone does not grant a reuse license.
+
+## Today & Daily Planning
+
+Disciplina 1.2.0 opens on Today. Add a task directly, choose **Add existing task…**, or use **Add to Today** in a task's actions/details. Drag to reorder today's unfinished work or use **Move Up/Down**. Earlier unfinished plans stay separate until you move or remove them. Removing a plan keeps the task and all recorded work. New recurring occurrences join Today automatically; global capture remains unplanned.
+
+Planning uses schema V7 and JSON backup format 6; older supported backups import with no planning assignments. See [implementation notes](docs/V1.2.0-IMPLEMENTATION.md) and [validation evidence](docs/VALIDATION.md).

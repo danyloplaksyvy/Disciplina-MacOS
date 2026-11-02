@@ -59,6 +59,7 @@ struct TaskSnapshot: Equatable, Codable, Sendable {
         guard Set(allocationIDs).count == allocationIDs.count,
               tasks.allSatisfy({ $0.appearance == $0.appearance?.normalized }),
               series.allSatisfy({ $0.futureAppearance == $0.futureAppearance?.normalized }) else { throw DataError.invalidSnapshot }
+        try validatePlanning()
         try validateRecurrence()
         try validateGoals()
         let byID = Dictionary(uniqueKeysWithValues: tasks.map { ($0.id, $0) })

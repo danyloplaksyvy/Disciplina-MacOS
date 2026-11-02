@@ -19,6 +19,7 @@ struct TaskInputView: View {
     let focusToken: Int
     var cancel: () -> Void = {}
     var goalID: UUID? = nil
+    var planForToday = false
     var created: (String) -> Void = { _ in }
     @State private var title = ""
     var body: some View {
@@ -29,7 +30,7 @@ struct TaskInputView: View {
                 .disabled(title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || store.unavailable)
         }
     }
-    private func add() { if store.create(title: title, goalID: goalID) { let saved = title.trimmingCharacters(in: .whitespacesAndNewlines); title = ""; created(saved) } }
+    private func add() { if (planForToday ? store.createForToday(title: title) : store.create(title: title, goalID: goalID)) { let saved = title.trimmingCharacters(in: .whitespacesAndNewlines); title = ""; created(saved) } }
 }
 
 struct TimerControls: View {
@@ -75,6 +76,8 @@ struct TaskRowView: View {
     @State private var recurringDelete = false
     var details: () -> Void = {}
     var preservedDraft: TaskTitleDraft? = nil
+    var moveUp: (() -> Void)? = nil
+    var moveDown: (() -> Void)? = nil
     @State private var localDraft = TaskTitleDraft()
     private var editor: TaskTitleDraft { preservedDraft ?? localDraft }
     @FocusState private var editingFocused: Bool
@@ -127,6 +130,9 @@ struct TaskRowView: View {
     @ViewBuilder private var actions: some View {
         Button("Open details", action: details)
         Button("Edit title") { editor.text = item.title; editor.editing = true; editingFocused = true }
+        PlanningActions(item: item, store: store)
+        if let moveUp { Button("Move Up", action: moveUp) }
+        if let moveDown { Button("Move Down", action: moveDown) }
         Menu("Change status") {
             ForEach(TaskStatus.allCases, id: \.self) { status in
                 Button(status.title) { store.setStatus(item.id, status) }
@@ -162,6 +168,8 @@ struct TaskDetailsView: View {
                         .accessibilityLabel("Close details").help("Close details")
                 }
                 Text(item.status.title)
+                if let day = item.plannedDay { Text("Planned for \(day.formatted)").font(.callout).foregroundStyle(.secondary) }
+                HStack { PlanningActions(item: item, store: store) }
                 Button("Appearance…") { appearanceEditor = true }.disabled(store.unavailable)
                 HStack {
                     Text("Goal: " + (store.goals.first { $0.id == item.goalID }?.title ?? "Unassigned")).lineLimit(2)
@@ -325,7 +333,7 @@ struct MainTaskWindowView: View {
                 }
             }
             Text(results.countLabel + " · Local storage").accessibilityIdentifier("task-result-count").font(.caption).foregroundStyle(.secondary)
-                #if DEBUG
+                #if DEBUG || SEARCH_PROFILING
                 .background(SearchResultDrawProbe(revision: resultRevision).allowsHitTesting(false).accessibilityHidden(true))
                 #endif
         }.padding(24).frame(minWidth: 760, minHeight: 400).tint(Theme.accent)
