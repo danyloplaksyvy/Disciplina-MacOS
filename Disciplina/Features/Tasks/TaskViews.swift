@@ -273,7 +273,7 @@ struct MainTaskWindowView: View {
     @State private var picker = false
     @State private var revealPlannedID: UUID?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @FocusState private var listFocused: Bool
+    @FocusState private var focusedList: Scope?
     private var visibleIDs: Set<UUID> {
         if store.unavailable { return [] }
         if scope == .today {
@@ -350,13 +350,18 @@ struct MainTaskWindowView: View {
                 }
             }
             .onReceive(NotificationCenter.default.publisher(for: .focusNewTask)) { _ in focusToken += 1 }
-            .onReceive(NotificationCenter.default.publisher(for: .focusTaskSearch)) { _ in scope = .all; searchFocusToken += 1 }
+            .onReceive(NotificationCenter.default.publisher(for: .focusTaskSearch)) { _ in
+                scope = .all
+                focusedList = nil
+                // Apply the scope/layout update before assigning the native search responder.
+                DispatchQueue.main.async { searchFocusToken += 1 }
+            }
             .onChange(of: ObjectIdentifier(store)) { _, _ in
                 selection = nil; detailID = nil; titleDrafts = TaskTitleDrafts(); collapsedDays = []
                 earlierExpanded = false; completedExpanded = false; picker = false; revealPlannedID = nil
                 todayQuery = TaskQuery(); allQuery = TaskQuery(); hiddenCreationTitle = nil; rebuildResults()
             }
-            .onChange(of: scope) { _, _ in hiddenCreationTitle = nil; listFocused = false }
+            .onChange(of: scope) { _, _ in hiddenCreationTitle = nil }
             .onChange(of: todayQuery) { _, _ in rebuildResults() }
             .onChange(of: allQuery) { _, _ in rebuildResults() }
             .onChange(of: store.dayGroups, initial: true) { _, _ in rebuildResults() }
@@ -368,7 +373,7 @@ struct MainTaskWindowView: View {
             }
     }
     private var allList: some View {
-        taskList(identifier: "main-task-list") {
+        taskList(scope: .all, identifier: "main-task-list") {
             ForEach(results.groups) { day in
                 Section {
                     if allQuery.isActive || !collapsedDays.contains(day.id) {
@@ -390,7 +395,7 @@ struct MainTaskWindowView: View {
     }
     private var plannedList: some View {
         ScrollViewReader { proxy in
-            taskList(identifier: "today-task-list") {
+            taskList(scope: .today, identifier: "today-task-list") {
                 if !store.unavailable {
                     Section("Today · \(planned.plan.today.count)") {
                         ForEach(planned.plan.today) { item in taskRow(item, planning: true).id(item.id).moveDisabled(!orderingEnabled) }
@@ -427,17 +432,17 @@ struct MainTaskWindowView: View {
             }.onChange(of: revealPlannedID) { _, id in if let id { proxy.scrollTo(id); revealPlannedID = nil } }
         }
     }
-    private func taskList<Content: View>(identifier: String, @ViewBuilder content: () -> Content) -> some View {
+    private func taskList<Content: View>(scope listScope: Scope, identifier: String, @ViewBuilder content: () -> Content) -> some View {
         List(selection: listSelection, content: content)
-            .listStyle(.inset).focused($listFocused).accessibilityIdentifier(identifier)
+            .listStyle(.inset).focused($focusedList, equals: listScope).accessibilityIdentifier(identifier)
             .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: store.structureRevision)
             .onKeyPress(.space) {
-                guard listFocused, (NSApp.keyWindow?.firstResponder as? NSTextView)?.isEditable != true,
+                guard focusedList == listScope, (NSApp.keyWindow?.firstResponder as? NSTextView)?.isEditable != true,
                       !store.unavailable, let selection, visibleIDs.contains(selection), let item = store.items.first(where: { $0.id == selection }) else { return .ignored }
                 store.setCompleted(id: item.id, isCompleted: !item.isCompleted); return .handled
             }
             .onKeyPress(.return) {
-                guard listFocused, (NSApp.keyWindow?.firstResponder as? NSTextView)?.isEditable != true,
+                guard focusedList == listScope, (NSApp.keyWindow?.firstResponder as? NSTextView)?.isEditable != true,
                       !store.unavailable, let selection, visibleIDs.contains(selection) else { return .ignored }
                 detailID = selection; return .handled
             }
@@ -458,7 +463,7 @@ struct MainTaskWindowView: View {
         if let title = hiddenCreationTitle, query.matches(title: title, status: .todo, goalID: nil) { hiddenCreationTitle = nil }
     }
     private func clearFilters() { query = TaskQuery(); hiddenCreationTitle = nil }
-    private func focusList() { NSApp.keyWindow?.makeFirstResponder(nil); listFocused = true }
+    private func focusList() { NSApp.keyWindow?.makeFirstResponder(nil); focusedList = scope }
     private var searchControls: some View {
         HStack(spacing: 10) {
             TaskSearchField(text: Binding(get: { query.text }, set: { query.text = $0 }), focusToken: searchFocusToken, escape: {
@@ -485,8 +490,8 @@ struct MainTaskWindowView: View {
     }
     private func taskRow(_ item: TodoItem, planning: Bool = false) -> some View {
         let index = orderingEnabled && planning ? planned.plan.today.firstIndex(where: { $0.id == item.id }) : nil
-        return TaskRowView(item: item, store: store, showPlanning: !planning, selected: selection == item.id, selectionFocused: listFocused,
-            details: { selection = item.id; detailID = item.id; listFocused = true }, preservedDraft: titleDrafts.draft(for: item.id),
+        return TaskRowView(item: item, store: store, showPlanning: !planning, selected: selection == item.id, selectionFocused: focusedList == (planning ? .today : .all),
+            details: { selection = item.id; detailID = item.id; focusedList = scope }, preservedDraft: titleDrafts.draft(for: item.id),
             moveUp: index.map { $0 > 0 } == true ? { move(item.id, by: -1) } : nil,
             moveDown: index.map { $0 < planned.plan.today.count - 1 } == true ? { move(item.id, by: 1) } : nil)
             .tag(item.id).transition(reduceMotion ? .identity : .opacity.combined(with: .move(edge: .top)))
