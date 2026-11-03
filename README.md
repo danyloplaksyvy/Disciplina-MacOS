@@ -6,7 +6,7 @@ A native, offline task manager with a main window, menu bar popover, and configu
 
 Open this repository's **Actions → macOS validation**, select a successful run, and download **Disciplina-arm64-development**. Unzip the artifact and the enclosed app archive, then copy Disciplina.app to `/Applications`. This build is for Apple Silicon Macs and is ad-hoc signed, not notarized. macOS may require a deliberate approval in Privacy & Security before opening it. Do not disable Gatekeeper globally.
 
-Launch Disciplina to open Today. Closing the window leaves the app in the menu bar. Press Control–Option–Space to capture a task; configure another shortcut in Settings. Launch at login is off by default and should be enabled only after placing the app in its permanent location. Quit explicitly from the app menu or popover.
+Launch Disciplina to open Tasks with the Today scope selected. Closing the window leaves the app in the menu bar. Press Control–Option–Space to capture a task; configure another shortcut in Settings. Launch at login is off by default and should be enabled only after placing the app in its permanent location. Quit explicitly from the app menu or popover.
 
 Start a task to track time, pause when you stop working, and resume to create another work session. Only one timer runs at a time. While timing, the menu bar shows a burgundy dot and session time beside the checkmark; otherwise it shows “3 left,” “All clear,” or “—” when state is unavailable. The popover offers quick actions; the Tasks destination groups tasks by creation day, with status sections and session history.
 
@@ -40,7 +40,7 @@ Filtering keeps open details and unfinished inline title edits. A hidden task's 
 
 ## Today & Daily Planning
 
-Disciplina 1.2.0 opens on Today. Add a task directly, choose **Add existing task…**, or use **Add to Today** in a task's actions/details. Drag to reorder today's unfinished work or use **Move Up/Down**. Earlier unfinished plans stay separate until you move or remove them. Removing a plan keeps the task and all recorded work. New recurring occurrences join Today automatically; global capture remains unplanned.
+Disciplina 1.2.0 opens Tasks with a **Today / All tasks** scope control. Today emphasizes planned work; All tasks keeps the complete creation-day-grouped library. Scope changes preserve the creation draft, selection, details, and independent list scroll positions. Add a task directly, choose **Add existing task…**, or use **Add to Today** in a task's actions/details. Drag to reorder today's unfinished work or use **Move Up/Down**. Earlier unfinished plans and completed plans are collapsed by default; earlier work stays separate until you move or remove it. Removing a plan keeps the task and all recorded work. New recurring occurrences join Today automatically; global capture and creation in All tasks remain unplanned. Search and filters are retained independently per scope; Command-F selects All tasks search.
 
 Planning uses schema V7 and JSON backup format 6; older supported backups import with no planning assignments. See [implementation notes](docs/V1.2.0-IMPLEMENTATION.md) and [validation evidence](docs/VALIDATION.md).
 

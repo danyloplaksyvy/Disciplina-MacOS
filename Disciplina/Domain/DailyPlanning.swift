@@ -77,3 +77,30 @@ final class PlanningService {
         try repository.commit(state)
     }
 }
+
+/// A read-only scope projection; planning remains owned by the committed snapshot.
+struct PlannedTaskResults: Equatable {
+    var plan = DailyPlan()
+    var totalCount = 0
+    var unavailable = false
+    var matchedIDs: Set<UUID> {
+        Set(plan.today.map(\.id) + plan.earlier.flatMap { $0.tasks.map(\.id) } + plan.completed.map(\.id))
+    }
+    var countLabel: String { unavailable ? "Task results unavailable" : "\(matchedIDs.count) of \(totalCount) tasks" }
+    func visibleIDs(earlierExpanded: Bool, completedExpanded: Bool, searching: Bool) -> Set<UUID> {
+        Set(plan.today.map(\.id)
+            + (earlierExpanded || searching ? plan.earlier.flatMap { $0.tasks.map(\.id) } : [])
+            + (completedExpanded || searching ? plan.completed.map(\.id) : []))
+    }
+    init(plan source: DailyPlan = DailyPlan(), query: TaskQuery = TaskQuery(), unavailable: Bool = false) {
+        self.unavailable = unavailable
+        guard !unavailable else { return }
+        totalCount = source.today.count + source.earlier.reduce(0) { $0 + $1.tasks.count } + source.completed.count
+        plan.today = source.today.filter { query.matches($0) }
+        plan.completed = source.completed.filter { query.matches($0) }
+        plan.earlier = source.earlier.compactMap { group in
+            let tasks = group.tasks.filter { query.matches($0) }
+            return tasks.isEmpty ? nil : DailyPlan.Earlier(day: group.day, tasks: tasks)
+        }
+    }
+}

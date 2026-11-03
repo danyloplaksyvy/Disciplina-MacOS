@@ -24,7 +24,7 @@ struct TaskInputView: View {
     @State private var title = ""
     var body: some View {
         HStack {
-            CaptureTextField(text: $title, focusToken: focusToken, submit: add, cancel: cancel).frame(height: 26)
+            CaptureTextField(text: $title, placeholder: planForToday ? "Add a task for today…" : "Add a task…", focusToken: focusToken, submit: add, cancel: cancel).frame(height: 26)
             Button(action: add) { Image(systemName: "plus") }
                 .help("Add task").accessibilityLabel("Add task")
                 .disabled(title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || store.unavailable)
@@ -67,6 +67,7 @@ struct TaskRowView: View {
     let item: TodoItem
     let store: TaskStore
     var compact = false
+    var showPlanning = false
     var selected = false
     var selectionFocused = true
     @Environment(\.controlActiveState) private var controlActiveState
@@ -109,6 +110,7 @@ struct TaskRowView: View {
                             Label(store.timer.running?.taskID == item.id ? "Running" : item.status == .inProgress ? "Paused" : item.status.title,
                                   systemImage: store.timer.running?.taskID == item.id ? "play.fill" : item.status == .inProgress ? "pause" : "circle")
                             Text(DurationText.concise(store.total(item.id))).monospacedDigit()
+                            if showPlanning, item.plannedDay == store.today { Text("Planned today") }
                             if item.seriesID != nil { Image(systemName: "repeat").help("Recurring task") }
                         }.font(.caption).foregroundStyle(selected ? rowColor : Color.secondary)
                     }
@@ -248,18 +250,45 @@ struct TaskDetailsView: View {
 struct MainTaskWindowView: View {
     let store: TaskStore
     var openSettings: () -> Void = {}
+    private enum Scope: String, CaseIterable { case today = "Today", all = "All tasks" }
+    @State private var scope: Scope = .today
+    @State private var todayQuery = TaskQuery()
+    @State private var allQuery = TaskQuery()
+    private var query: TaskQuery {
+        get { scope == .today ? todayQuery : allQuery }
+        nonmutating set { if scope == .today { todayQuery = newValue } else { allQuery = newValue } }
+    }
     @State private var focusToken = 0
     @State private var searchFocusToken = 0
     @State private var resultRevision = 0
-    @State private var query = TaskQuery()
     @State private var results = TaskSearchResult(groups: [], visibleIDs: [], totalCount: 0, unavailable: false)
+    @State private var planned = PlannedTaskResults()
     @State private var hiddenCreationTitle: String?
     @State private var titleDrafts = TaskTitleDrafts()
     @State private var selection: UUID?
     @State private var detailID: UUID?
     @State private var collapsedDays: Set<LocalDay> = []
+    @State private var earlierExpanded = false
+    @State private var completedExpanded = false
+    @State private var picker = false
+    @State private var revealPlannedID: UUID?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @FocusState private var listFocused: Bool
+    private var visibleIDs: Set<UUID> {
+        if store.unavailable { return [] }
+        if scope == .today {
+            return planned.visibleIDs(earlierExpanded: earlierExpanded, completedExpanded: completedExpanded, searching: todayQuery.isActive)
+        }
+        return Set(results.groups.filter { allQuery.isActive || !collapsedDays.contains($0.id) }
+            .flatMap { $0.inProgress + $0.todo + $0.completed }.map(\.id))
+    }
+    private var matchedIDs: Set<UUID> { scope == .today ? planned.matchedIDs : results.visibleIDs }
+    private var orderingEnabled: Bool { !todayQuery.isActive && !store.unavailable }
+    private var listSelection: Binding<UUID?> {
+        Binding(get: { selection.flatMap { visibleIDs.contains($0) ? $0 : nil } }, set: { id in
+            if let id { selection = id; detailID = id }
+        })
+    }
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
@@ -267,7 +296,19 @@ struct MainTaskWindowView: View {
                 Spacer()
                 Button(action: openSettings) { Image(systemName: "gearshape") }.help("Settings").accessibilityLabel("Settings")
             }
-            TaskInputView(store: store, focusToken: focusToken, created: { title in
+            HStack {
+                Picker("Task scope", selection: $scope) {
+                    ForEach(Scope.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                }.pickerStyle(.segmented).labelsHidden().frame(width: 240).accessibilityIdentifier("task-scope")
+                Spacer()
+                if scope == .today { Button("Add existing task…") { picker = true }.disabled(store.unavailable) }
+            }
+            if scope == .today {
+                Text(store.unavailable ? "Today’s plan is unavailable" : "\(store.today.formatted) · \(store.dailyPlan.today.count) unfinished")
+                    .font(.callout).foregroundStyle(.secondary).accessibilityIdentifier("today-summary")
+            }
+            // Identity stays stable when the scope changes, preserving the creation draft and native Undo.
+            TaskInputView(store: store, focusToken: focusToken, planForToday: scope == .today, created: { title in
                 hiddenCreationTitle = query.matches(title: title, status: .todo, goalID: nil) ? nil : title
             })
             searchControls
@@ -281,77 +322,138 @@ struct MainTaskWindowView: View {
             }
             StoreErrorView(store: store)
             TaskDetailSplit(showsDetails: store.items.contains { $0.id == detailID }) {
-                List(selection: Binding<UUID?>(get: {
-                    selection.flatMap { results.visibleIDs.contains($0) ? $0 : nil }
-                }, set: { id in
-                    // Removing a row due to a filter must not close its editor.
-                    if let id { selection = id; detailID = id }
-                })) {
-                    ForEach(results.groups) { day in
-                        Section {
-                            if query.isActive || !collapsedDays.contains(day.id) {
-                                group("In Progress", day.inProgress)
-                                group("To Do", day.todo)
-                                group("Completed", day.completed)
-                            }
-                        } header: {
-                            Button {
-                                if collapsedDays.contains(day.id) { collapsedDays.remove(day.id) }
-                                else { collapsedDays.insert(day.id) }
-                            } label: {
-                                Label(day.title, systemImage: !query.isActive && collapsedDays.contains(day.id) ? "chevron.right" : "chevron.down")
-                            }.buttonStyle(.plain).disabled(query.isActive).accessibilityLabel("\(!query.isActive && collapsedDays.contains(day.id) ? "Expand" : "Collapse") \(day.title)")
-                        }
-                    }
-                }.animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: store.structureRevision).listStyle(.inset).focused($listFocused).accessibilityIdentifier("main-task-list")
-                    .onKeyPress(.space) {
-                        guard listFocused, (NSApp.keyWindow?.firstResponder as? NSTextView)?.isEditable != true, !store.unavailable, let selection, results.visibleIDs.contains(selection), let item = store.items.first(where: { $0.id == selection }) else { return .ignored }
-                        store.setCompleted(id: item.id, isCompleted: !item.isCompleted); return .handled
-                    }
-                    .onKeyPress(.return) {
-                        guard listFocused, (NSApp.keyWindow?.firstResponder as? NSTextView)?.isEditable != true, !store.unavailable, let selection, results.visibleIDs.contains(selection) else { return .ignored }
-                        detailID = selection; return .handled
-                    }
-                    .overlay {
-                        if results.unavailable { Text("Task results are unavailable until recovery succeeds.").foregroundStyle(.secondary) }
-                        else if results.visibleIDs.isEmpty {
-                            VStack(spacing: 8) {
-                                Text(query.isActive ? "No tasks match these filters." : "No tasks yet.").foregroundStyle(.secondary)
-                                if query.isActive { Button("Clear filters", action: clearFilters) }
-                            }
-                        }
-                    }
+                ZStack {
+                    RetainedDestination(isVisible: scope == .today) { plannedList }
+                    RetainedDestination(isVisible: scope == .all) { allList }
+                }
             } details: {
                 if let item = store.items.first(where: { $0.id == detailID }) {
                     VStack(alignment: .leading, spacing: 8) {
-                        if !results.unavailable && !results.visibleIDs.contains(item.id) {
-                            Text("This task is outside the current filters").font(.callout).foregroundStyle(.secondary)
+                        if !store.unavailable && !visibleIDs.contains(item.id) {
+                            Text("This task is outside the current scope or filters.").font(.callout).foregroundStyle(.secondary)
                                 .accessibilityIdentifier("filtered-details-notice")
                         }
                         TaskDetailsView(item: item, store: store, close: { detailID = nil }).id(item.id)
                     }
                 }
             }
-            Text(results.countLabel + " · Local storage").accessibilityIdentifier("task-result-count").font(.caption).foregroundStyle(.secondary)
+            Text((scope == .today ? planned.countLabel : results.countLabel) + " · Local storage")
+                .accessibilityIdentifier("task-result-count").font(.caption).foregroundStyle(.secondary)
                 #if DEBUG || SEARCH_PROFILING
                 .background(SearchResultDrawProbe(revision: resultRevision).allowsHitTesting(false).accessibilityHidden(true))
                 #endif
         }.padding(24).frame(minWidth: 760, minHeight: 400).tint(Theme.accent)
-            .onReceive(NotificationCenter.default.publisher(for: .focusNewTask)) { _ in focusToken += 1 }
-            .onReceive(NotificationCenter.default.publisher(for: .focusTaskSearch)) { _ in searchFocusToken += 1 }
-            .onChange(of: ObjectIdentifier(store)) { _, _ in
-                selection = nil; detailID = nil; titleDrafts = TaskTitleDrafts()
-                collapsedDays = []; clearFilters(); rebuildResults()
+            .sheet(isPresented: $picker) {
+                PlanTaskPicker(store: store) { id in
+                    // Clear restrictions only for an explicit add so its result can be seen.
+                    todayQuery = TaskQuery(); revealPlannedID = id
+                }
             }
-            .onChange(of: query) { _, _ in rebuildResults() }
+            .onReceive(NotificationCenter.default.publisher(for: .focusNewTask)) { _ in focusToken += 1 }
+            .onReceive(NotificationCenter.default.publisher(for: .focusTaskSearch)) { _ in scope = .all; searchFocusToken += 1 }
+            .onChange(of: ObjectIdentifier(store)) { _, _ in
+                selection = nil; detailID = nil; titleDrafts = TaskTitleDrafts(); collapsedDays = []
+                earlierExpanded = false; completedExpanded = false; picker = false; revealPlannedID = nil
+                todayQuery = TaskQuery(); allQuery = TaskQuery(); hiddenCreationTitle = nil; rebuildResults()
+            }
+            .onChange(of: scope) { _, _ in hiddenCreationTitle = nil; listFocused = false }
+            .onChange(of: todayQuery) { _, _ in rebuildResults() }
+            .onChange(of: allQuery) { _, _ in rebuildResults() }
             .onChange(of: store.dayGroups, initial: true) { _, _ in rebuildResults() }
+            .onChange(of: store.dailyPlan) { _, _ in rebuildResults() }
             .onChange(of: store.unavailable) { _, _ in rebuildResults() }
             .onChange(of: store.goals.map(\.id)) { _, ids in
-                if case .goal(let id) = query.goal, !ids.contains(id) { query.goal = .all }
+                if case .goal(let id) = todayQuery.goal, !ids.contains(id) { todayQuery.goal = .all }
+                if case .goal(let id) = allQuery.goal, !ids.contains(id) { allQuery.goal = .all }
+            }
+    }
+    private var allList: some View {
+        taskList(identifier: "main-task-list") {
+            ForEach(results.groups) { day in
+                Section {
+                    if allQuery.isActive || !collapsedDays.contains(day.id) {
+                        group("In Progress", day.inProgress)
+                        group("To Do", day.todo)
+                        group("Completed", day.completed)
+                    }
+                } header: {
+                    Button {
+                        if collapsedDays.contains(day.id) { collapsedDays.remove(day.id) }
+                        else { collapsedDays.insert(day.id) }
+                    } label: {
+                        Label(day.title, systemImage: !allQuery.isActive && collapsedDays.contains(day.id) ? "chevron.right" : "chevron.down")
+                    }.buttonStyle(.plain).disabled(allQuery.isActive)
+                        .accessibilityLabel("\(!allQuery.isActive && collapsedDays.contains(day.id) ? "Expand" : "Collapse") \(day.title)")
+                }
+            }
+        }
+    }
+    private var plannedList: some View {
+        ScrollViewReader { proxy in
+            taskList(identifier: "today-task-list") {
+                if !store.unavailable {
+                    Section("Today · \(planned.plan.today.count)") {
+                        ForEach(planned.plan.today) { item in taskRow(item, planning: true).id(item.id).moveDisabled(!orderingEnabled) }
+                            .onMove { indices, destination in reorder(indices, destination) }
+                    }
+                    if !planned.plan.earlier.isEmpty {
+                        Section {
+                            if earlierExpanded || todayQuery.isActive {
+                                ForEach(planned.plan.earlier) { day in
+                                    Text(day.day.formatted).font(.caption).foregroundStyle(.secondary)
+                                    ForEach(day.tasks) { item in taskRow(item, planning: true) }
+                                }
+                            }
+                        } header: {
+                            Button { earlierExpanded.toggle() } label: {
+                                Label("Earlier plans · \(planned.plan.earlier.reduce(0) { $0 + $1.tasks.count })", systemImage: earlierExpanded || todayQuery.isActive ? "chevron.down" : "chevron.right")
+                            }.buttonStyle(.plain).disabled(todayQuery.isActive)
+                                .accessibilityLabel(earlierExpanded ? "Collapse earlier plans" : "Expand earlier plans")
+                        }
+                    }
+                    if !planned.plan.completed.isEmpty {
+                        Section {
+                            if completedExpanded || todayQuery.isActive {
+                                ForEach(planned.plan.completed) { item in taskRow(item, planning: true) }
+                            }
+                        } header: {
+                            Button { completedExpanded.toggle() } label: {
+                                Label("Completed today · \(planned.plan.completed.count)", systemImage: completedExpanded || todayQuery.isActive ? "chevron.down" : "chevron.right")
+                            }.buttonStyle(.plain).disabled(todayQuery.isActive)
+                                .accessibilityLabel(completedExpanded ? "Collapse planned completed" : "Expand planned completed")
+                        }
+                    }
+                }
+            }.onChange(of: revealPlannedID) { _, id in if let id { proxy.scrollTo(id); revealPlannedID = nil } }
+        }
+    }
+    private func taskList<Content: View>(identifier: String, @ViewBuilder content: () -> Content) -> some View {
+        List(selection: listSelection, content: content)
+            .listStyle(.inset).focused($listFocused).accessibilityIdentifier(identifier)
+            .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: store.structureRevision)
+            .onKeyPress(.space) {
+                guard listFocused, (NSApp.keyWindow?.firstResponder as? NSTextView)?.isEditable != true,
+                      !store.unavailable, let selection, visibleIDs.contains(selection), let item = store.items.first(where: { $0.id == selection }) else { return .ignored }
+                store.setCompleted(id: item.id, isCompleted: !item.isCompleted); return .handled
+            }
+            .onKeyPress(.return) {
+                guard listFocused, (NSApp.keyWindow?.firstResponder as? NSTextView)?.isEditable != true,
+                      !store.unavailable, let selection, visibleIDs.contains(selection) else { return .ignored }
+                detailID = selection; return .handled
+            }
+            .overlay {
+                if store.unavailable { Text("Task results are unavailable until recovery succeeds.").foregroundStyle(.secondary) }
+                else if matchedIDs.isEmpty {
+                    VStack(spacing: 8) {
+                        Text(query.isActive ? "No tasks match these filters." : scope == .today ? "Add a task for today or choose an existing task." : "No tasks yet.").foregroundStyle(.secondary)
+                        if query.isActive { Button("Clear filters", action: clearFilters) }
+                    }
+                }
             }
     }
     private func rebuildResults() {
-        results = query.project(store.dayGroups, unavailable: store.unavailable)
+        results = allQuery.project(store.dayGroups, unavailable: store.unavailable)
+        planned = PlannedTaskResults(plan: store.dailyPlan, query: todayQuery, unavailable: store.unavailable)
         resultRevision += 1
         if let title = hiddenCreationTitle, query.matches(title: title, status: .todo, goalID: nil) { hiddenCreationTitle = nil }
     }
@@ -359,19 +461,17 @@ struct MainTaskWindowView: View {
     private func focusList() { NSApp.keyWindow?.makeFirstResponder(nil); listFocused = true }
     private var searchControls: some View {
         HStack(spacing: 10) {
-            TaskSearchField(text: $query.text, focusToken: searchFocusToken, escape: {
+            TaskSearchField(text: Binding(get: { query.text }, set: { query.text = $0 }), focusToken: searchFocusToken, escape: {
                 if !query.text.isEmpty { query.text = "" } else { focusList() }
             }, enter: focusList).frame(minWidth: 140, maxWidth: .infinity).frame(height: 26)
-            Picker("Status", selection: $query.status) {
+            Picker("Status", selection: Binding(get: { query.status }, set: { query.status = $0 })) {
                 ForEach(TaskQuery.Status.allCases) { Text($0.rawValue).tag($0) }
             }.labelsHidden().frame(width: 145).accessibilityLabel("Filter by status").accessibilityIdentifier("task-status-filter")
-            Picker("Goal", selection: $query.goal) {
+            Picker("Goal", selection: Binding(get: { query.goal }, set: { query.goal = $0 })) {
                 Text("All goals").tag(TaskQuery.GoalFilter.all)
                 Text("Unassigned").tag(TaskQuery.GoalFilter.unassigned)
                 ForEach(GoalStatus.allCases, id: \.self) { status in
-                    Section(status.title) {
-                        ForEach(store.goals(in: status)) { goal in Text(goal.title).tag(TaskQuery.GoalFilter.goal(goal.id)) }
-                    }
+                    Section(status.title) { ForEach(store.goals(in: status)) { goal in Text(goal.title).tag(TaskQuery.GoalFilter.goal(goal.id)) } }
                 }
             }.labelsHidden().frame(width: 180).accessibilityLabel("Filter by goal").accessibilityIdentifier("task-goal-filter")
             if query.isActive {
@@ -381,14 +481,25 @@ struct MainTaskWindowView: View {
         }
     }
     @ViewBuilder private func group(_ title: String, _ items: [TodoItem]) -> some View {
-        if !items.isEmpty {
-        Section("\(title) · \(items.count)") {
-            ForEach(items) { item in
-                TaskRowView(item: item, store: store, selected: selection == item.id, selectionFocused: listFocused, details: { selection = item.id; detailID = item.id; listFocused = true }, preservedDraft: titleDrafts.draft(for: item.id)).tag(item.id)
-                    .transition(reduceMotion ? .identity : .opacity.combined(with: .move(edge: .top)))
-            }
-        }
-        }
+        if !items.isEmpty { Section("\(title) · \(items.count)") { ForEach(items) { item in taskRow(item) } } }
+    }
+    private func taskRow(_ item: TodoItem, planning: Bool = false) -> some View {
+        let index = orderingEnabled && planning ? planned.plan.today.firstIndex(where: { $0.id == item.id }) : nil
+        return TaskRowView(item: item, store: store, showPlanning: !planning, selected: selection == item.id, selectionFocused: listFocused,
+            details: { selection = item.id; detailID = item.id; listFocused = true }, preservedDraft: titleDrafts.draft(for: item.id),
+            moveUp: index.map { $0 > 0 } == true ? { move(item.id, by: -1) } : nil,
+            moveDown: index.map { $0 < planned.plan.today.count - 1 } == true ? { move(item.id, by: 1) } : nil)
+            .tag(item.id).transition(reduceMotion ? .identity : .opacity.combined(with: .move(edge: .top)))
+    }
+    private func reorder(_ indices: IndexSet, _ destination: Int) {
+        guard orderingEnabled else { return }
+        var ids = store.dailyPlan.today.map(\.id); ids.move(fromOffsets: indices, toOffset: destination); store.reorderToday(ids)
+    }
+    private func move(_ id: UUID, by offset: Int) {
+        guard orderingEnabled else { return }
+        var ids = store.dailyPlan.today.map(\.id)
+        guard let index = ids.firstIndex(of: id), ids.indices.contains(index + offset) else { return }
+        ids.swapAt(index, index + offset); store.reorderToday(ids)
     }
 }
 

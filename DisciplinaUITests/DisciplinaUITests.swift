@@ -10,14 +10,15 @@ final class DisciplinaUITests: XCTestCase {
         app.launchArguments = ["--ui-testing"]
         app.launch()
         XCTAssertTrue(app.outlines["today-task-list"].waitForExistence(timeout: 10))
-        app.buttons["navigate-tasks"].firstMatch.click()
+        XCTAssertFalse(app.buttons["navigate-today"].exists)
+        app.radioButtons["All tasks"].click()
         XCTAssertTrue(app.textFields["new-task"].waitForExistence(timeout: 10))
     }
 
     override func tearDownWithError() throws { app.terminate() }
 
     func testTodayCreationCompletionRemovalAndUndo() {
-        app.buttons["navigate-today"].firstMatch.click()
+        selectTaskScope("Today")
         let list = app.outlines["today-task-list"]
         add("Plan work")
         XCTAssertTrue(list.staticTexts["Plan work"].exists)
@@ -41,7 +42,7 @@ final class DisciplinaUITests: XCTestCase {
 
     func testTodayPickerAndKeyboardSearchPreserveDetails() {
         add("Existing work")
-        app.buttons["navigate-today"].firstMatch.click()
+        selectTaskScope("Today")
         XCTAssertFalse(app.outlines["today-task-list"].staticTexts["Existing work"].exists)
         app.buttons["Add existing task…"].click()
         let sheet = app.sheets.firstMatch
@@ -53,13 +54,13 @@ final class DisciplinaUITests: XCTestCase {
         app.typeKey("f", modifierFlags: .command)
         XCTAssertTrue(app.outlines["main-task-list"].waitForExistence(timeout: 5))
         taskSearch.typeText("Existing")
-        app.buttons["navigate-today"].firstMatch.click()
+        selectTaskScope("Today")
         XCTAssertTrue(app.scrollViews["task-details"].staticTexts["Existing work"].exists)
         XCTAssertTrue(list.staticTexts["Existing work"].exists)
     }
 
     func testTodayReorderingAndCompactDetails() {
-        app.buttons["navigate-today"].firstMatch.click()
+        selectTaskScope("Today")
         add("First plan"); add("Second plan")
         let list = app.outlines["today-task-list"]
         XCTAssertLessThan(list.staticTexts["First plan"].frame.minY, list.staticTexts["Second plan"].frame.minY)
@@ -75,6 +76,56 @@ final class DisciplinaUITests: XCTestCase {
         XCTAssertGreaterThanOrEqual(app.scrollViews["task-details"].frame.width, 300)
         let attachment = XCTAttachment(screenshot: window.screenshot())
         attachment.name = "today-compact-details"; attachment.lifetime = .keepAlways; add(attachment)
+    }
+
+    private func selectTaskScope(_ title: String) {
+        let control = app.radioButtons[title]
+        XCTAssertTrue(control.waitForExistence(timeout: 5))
+        control.click()
+    }
+
+    func testTaskScopesPreserveCreationDraftDetailsAndQueries() {
+        add("Unplanned work")
+        app.outlines["main-task-list"].staticTexts["Unplanned work"].click()
+        let field = app.textFields["new-task"]
+        field.click(); field.typeText("Draft for today")
+        taskSearch.click(); taskSearch.typeText("Unplanned")
+        selectTaskScope("Today")
+        XCTAssertEqual(field.value as? String, "Draft for today")
+        XCTAssertEqual(taskSearch.value as? String, "")
+        XCTAssertTrue(app.scrollViews["task-details"].staticTexts["Unplanned work"].exists)
+        XCTAssertTrue(app.staticTexts["filtered-details-notice"].exists)
+        field.click(); field.typeKey(.return, modifierFlags: [])
+        XCTAssertTrue(app.outlines["today-task-list"].staticTexts["Draft for today"].waitForExistence(timeout: 5))
+        selectTaskScope("All tasks")
+        XCTAssertEqual(taskSearch.value as? String, "Unplanned")
+        XCTAssertTrue(app.scrollViews["task-details"].staticTexts["Unplanned work"].exists)
+        app.typeKey("f", modifierFlags: .command)
+        taskSearch.typeKey(.escape, modifierFlags: [])
+        XCTAssertTrue(app.outlines["main-task-list"].staticTexts["Draft for today"].waitForExistence(timeout: 5))
+    }
+
+    func testTodayFiltersPreventPartialReorderingAndPreserveRenameDraft() {
+        selectTaskScope("Today")
+        add("Plan Alpha"); add("Plan Beta")
+        let list = app.outlines["today-task-list"]
+        list.staticTexts["Plan Alpha"].rightClick()
+        app.windows["main"].menuItems["Edit title"].click()
+        let editor = app.textFields["edit-task"]
+        editor.typeKey("a", modifierFlags: .command); editor.typeText("Uncommitted title")
+        selectTaskScope("All tasks")
+        XCTAssertEqual(app.textFields["edit-task"].value as? String, "Uncommitted title")
+        selectTaskScope("Today")
+        XCTAssertEqual(app.textFields["edit-task"].value as? String, "Uncommitted title")
+        app.buttons["Cancel"].firstMatch.click()
+        taskSearch.click(); taskSearch.typeText("Beta")
+        list.staticTexts["Plan Beta"].rightClick()
+        XCTAssertFalse(app.windows["main"].menuItems["Move Up"].exists)
+        app.typeKey(.escape, modifierFlags: [])
+        app.buttons["Clear filters"].click()
+        list.staticTexts["Plan Beta"].rightClick()
+        XCTAssertTrue(app.windows["main"].menuItems["Move Up"].exists)
+        app.typeKey(.escape, modifierFlags: [])
     }
 
     private func add(_ title: String) {
@@ -224,6 +275,7 @@ final class DisciplinaUITests: XCTestCase {
         app.launchArguments = ["--ui-testing", "--seed-goals-performance"]
         app.launch()
         XCTAssertTrue(app.textFields["new-task"].firstMatch.waitForExistence(timeout: 60))
+        selectTaskScope("All tasks")
         openGoals()
         let goal = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Open goal Performance Goal")).firstMatch
         XCTAssertTrue(goal.waitForExistence(timeout: 5)); goal.click()
@@ -243,6 +295,18 @@ final class DisciplinaUITests: XCTestCase {
         taskSearch.typeText("Work 42-")
         XCTAssertTrue(app.staticTexts["100 of 10000 tasks · Local storage"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.outlines["main-task-list"].staticTexts["Work 42-0"].exists)
+        let list = app.outlines["main-task-list"]
+        list.scroll(byDeltaX: 0, deltaY: -500)
+        let anchor = list.staticTexts.allElementsBoundByIndex.first {
+            $0.label.hasPrefix("Work 42-") && $0.frame.minY >= list.frame.minY && $0.frame.maxY <= list.frame.maxY
+        }
+        XCTAssertNotNil(anchor)
+        if let anchor {
+            let name = anchor.label, y = anchor.frame.minY
+            selectTaskScope("Today"); selectTaskScope("All tasks")
+            XCTAssertEqual(taskSearch.value as? String, "Work 42-")
+            XCTAssertEqual(list.staticTexts[name].frame.minY, y, accuracy: 2)
+        }
     }
 
     private var taskSearch: XCUIElement { app.searchFields["task-search"].firstMatch }
@@ -563,7 +627,8 @@ final class DisciplinaUITests: XCTestCase {
         app.launchArguments = ["--ui-testing", "--enable-test-shortcut"]
         app.launch()
         XCTAssertTrue(app.outlines["today-task-list"].waitForExistence(timeout: 10))
-        app.buttons["navigate-tasks"].firstMatch.click()
+        XCTAssertFalse(app.buttons["navigate-today"].exists)
+        selectTaskScope("All tasks")
         XCTAssertTrue(app.textFields["new-task"].waitForExistence(timeout: 10))
         let finder = XCUIApplication(bundleIdentifier: "com.apple.finder")
         finder.activate()
