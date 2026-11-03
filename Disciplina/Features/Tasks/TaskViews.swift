@@ -272,6 +272,7 @@ struct MainTaskWindowView: View {
     @State private var completedExpanded = false
     @State private var picker = false
     @State private var revealPlannedID: UUID?
+    @State private var pendingPlannedID: UUID?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @FocusState private var focusedList: Scope?
     private var visibleIDs: Set<UUID> {
@@ -343,10 +344,13 @@ struct MainTaskWindowView: View {
                 .background(SearchResultDrawProbe(revision: resultRevision).allowsHitTesting(false).accessibilityHidden(true))
                 #endif
         }.padding(24).frame(minWidth: 760, minHeight: 400).tint(Theme.accent)
-            .sheet(isPresented: $picker) {
+            .sheet(isPresented: $picker, onDismiss: {
+                // The committed row must be in the list before scrolling to it.
+                revealPlannedID = pendingPlannedID; pendingPlannedID = nil
+            }) {
                 PlanTaskPicker(store: store) { id in
                     // Clear restrictions only for an explicit add so its result can be seen.
-                    todayQuery = TaskQuery(); revealPlannedID = id
+                    todayQuery = TaskQuery(); pendingPlannedID = id
                 }
             }
             .onReceive(NotificationCenter.default.publisher(for: .focusNewTask)) { _ in focusToken += 1 }
@@ -358,7 +362,7 @@ struct MainTaskWindowView: View {
             }
             .onChange(of: ObjectIdentifier(store)) { _, _ in
                 selection = nil; detailID = nil; titleDrafts = TaskTitleDrafts(); collapsedDays = []
-                earlierExpanded = false; completedExpanded = false; picker = false; revealPlannedID = nil
+                earlierExpanded = false; completedExpanded = false; picker = false; revealPlannedID = nil; pendingPlannedID = nil
                 todayQuery = TaskQuery(); allQuery = TaskQuery(); hiddenCreationTitle = nil; rebuildResults()
             }
             .onChange(of: scope) { _, _ in hiddenCreationTitle = nil }
