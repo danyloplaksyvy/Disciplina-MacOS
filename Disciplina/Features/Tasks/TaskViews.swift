@@ -283,7 +283,7 @@ struct MainTaskWindowView: View {
             .flatMap { $0.inProgress + $0.todo + $0.completed }.map(\.id))
     }
     private var matchedIDs: Set<UUID> { scope == .today ? planned.matchedIDs : results.visibleIDs }
-    private var orderingEnabled: Bool { !todayQuery.isActive && !store.unavailable }
+    private var orderingEnabled: Bool { planned.canReorderToday && !store.unavailable }
     private var listSelection: Binding<UUID?> {
         Binding(get: { selection.flatMap { visibleIDs.contains($0) ? $0 : nil } }, set: { id in
             if let id { selection = id; detailID = id }
@@ -413,7 +413,7 @@ struct MainTaskWindowView: View {
                             Button { earlierExpanded.toggle() } label: {
                                 Label("Earlier plans · \(planned.plan.earlier.reduce(0) { $0 + $1.tasks.count })", systemImage: earlierExpanded || todayQuery.isActive ? "chevron.down" : "chevron.right")
                             }.buttonStyle(.plain).disabled(todayQuery.isActive)
-                                .accessibilityLabel(earlierExpanded ? "Collapse earlier plans" : "Expand earlier plans")
+                                .accessibilityLabel(earlierExpanded || todayQuery.isActive ? "Collapse earlier plans" : "Expand earlier plans")
                         }
                     }
                     if !planned.plan.completed.isEmpty {
@@ -425,7 +425,7 @@ struct MainTaskWindowView: View {
                             Button { completedExpanded.toggle() } label: {
                                 Label("Completed today · \(planned.plan.completed.count)", systemImage: completedExpanded || todayQuery.isActive ? "chevron.down" : "chevron.right")
                             }.buttonStyle(.plain).disabled(todayQuery.isActive)
-                                .accessibilityLabel(completedExpanded ? "Collapse planned completed" : "Expand planned completed")
+                                .accessibilityLabel(completedExpanded || todayQuery.isActive ? "Collapse planned completed" : "Expand planned completed")
                         }
                     }
                 }

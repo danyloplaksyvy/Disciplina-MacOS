@@ -111,6 +111,8 @@ import Testing
         let result = PlannedTaskResults(plan: source, query: TaskQuery(text: "CAFE", goal: .goal(goal)))
         #expect(result.plan.today.map(\.id) == [b.id, a.id])
         #expect(result.countLabel == "4 of 4 tasks")
+        #expect(result.canReorderToday)
+        #expect(!PlannedTaskResults(plan: source, query: TaskQuery(text: "first")).canReorderToday)
         #expect(result.visibleIDs(earlierExpanded: false, completedExpanded: false, searching: false) == [a.id, b.id])
         #expect(result.visibleIDs(earlierExpanded: false, completedExpanded: false, searching: true) == [a.id, b.id, old.id, done.id])
         #expect(PlannedTaskResults(plan: source, query: TaskQuery(status: .completed)).matchedIDs == [done.id])
@@ -121,6 +123,7 @@ import Testing
         let plan = DailyPlan(tasks: [value], day: LocalDay(now))
         let result = PlannedTaskResults(plan: plan, unavailable: true)
         #expect(result.matchedIDs.isEmpty)
+        #expect(!result.canReorderToday)
         #expect(result.countLabel == "Task results unavailable")
         #expect(PlannedTaskResults(plan: plan).matchedIDs == [value.id])
     }

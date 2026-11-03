@@ -83,6 +83,7 @@ struct PlannedTaskResults: Equatable {
     var plan = DailyPlan()
     var totalCount = 0
     var unavailable = false
+    var canReorderToday = false
     var matchedIDs: Set<UUID> {
         Set(plan.today.map(\.id) + plan.earlier.flatMap { $0.tasks.map(\.id) } + plan.completed.map(\.id))
     }
@@ -97,6 +98,7 @@ struct PlannedTaskResults: Equatable {
         guard !unavailable else { return }
         totalCount = source.today.count + source.earlier.reduce(0) { $0 + $1.tasks.count } + source.completed.count
         plan.today = source.today.filter { query.matches($0) }
+        canReorderToday = plan.today.count == source.today.count
         plan.completed = source.completed.filter { query.matches($0) }
         plan.earlier = source.earlier.compactMap { group in
             let tasks = group.tasks.filter { query.matches($0) }
