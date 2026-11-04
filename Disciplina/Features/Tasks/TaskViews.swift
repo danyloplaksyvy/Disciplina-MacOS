@@ -251,6 +251,7 @@ struct MainTaskWindowView: View {
     let store: TaskStore
     var openSettings: () -> Void = {}
     private enum Scope: String, CaseIterable { case today = "Today", all = "All tasks" }
+    private enum WorkspaceFocus: Hashable { case list(Scope), search }
     @State private var scope: Scope = .today
     @State private var todayQuery = TaskQuery()
     @State private var allQuery = TaskQuery()
@@ -274,7 +275,7 @@ struct MainTaskWindowView: View {
     @State private var revealPlannedID: UUID?
     @State private var pendingPlannedID: UUID?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @FocusState private var focusedList: Scope?
+    @FocusState private var workspaceFocus: WorkspaceFocus?
     private var visibleIDs: Set<UUID> {
         if store.unavailable { return [] }
         if scope == .today {
@@ -356,7 +357,7 @@ struct MainTaskWindowView: View {
             .onReceive(NotificationCenter.default.publisher(for: .focusNewTask)) { _ in focusToken += 1 }
             .onReceive(NotificationCenter.default.publisher(for: .focusTaskSearch)) { _ in
                 scope = .all
-                focusedList = nil
+                workspaceFocus = .search
                 // Apply the scope/layout update before assigning the native search responder.
                 DispatchQueue.main.async { searchFocusToken += 1 }
             }
@@ -438,15 +439,15 @@ struct MainTaskWindowView: View {
     }
     private func taskList<Content: View>(scope listScope: Scope, identifier: String, @ViewBuilder content: () -> Content) -> some View {
         List(selection: listSelection, content: content)
-            .listStyle(.inset).focused($focusedList, equals: listScope).accessibilityIdentifier(identifier)
+            .listStyle(.inset).focused($workspaceFocus, equals: .list(listScope)).accessibilityIdentifier(identifier)
             .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: store.structureRevision)
             .onKeyPress(.space) {
-                guard focusedList == listScope, (NSApp.keyWindow?.firstResponder as? NSTextView)?.isEditable != true,
+                guard workspaceFocus == .list(listScope), (NSApp.keyWindow?.firstResponder as? NSTextView)?.isEditable != true,
                       !store.unavailable, let selection, visibleIDs.contains(selection), let item = store.items.first(where: { $0.id == selection }) else { return .ignored }
                 store.setCompleted(id: item.id, isCompleted: !item.isCompleted); return .handled
             }
             .onKeyPress(.return) {
-                guard focusedList == listScope, (NSApp.keyWindow?.firstResponder as? NSTextView)?.isEditable != true,
+                guard workspaceFocus == .list(listScope), (NSApp.keyWindow?.firstResponder as? NSTextView)?.isEditable != true,
                       !store.unavailable, let selection, visibleIDs.contains(selection) else { return .ignored }
                 detailID = selection; return .handled
             }
@@ -467,12 +468,12 @@ struct MainTaskWindowView: View {
         if let title = hiddenCreationTitle, query.matches(title: title, status: .todo, goalID: nil) { hiddenCreationTitle = nil }
     }
     private func clearFilters() { query = TaskQuery(); hiddenCreationTitle = nil }
-    private func focusList() { NSApp.keyWindow?.makeFirstResponder(nil); focusedList = scope }
+    private func focusList() { NSApp.keyWindow?.makeFirstResponder(nil); workspaceFocus = .list(scope) }
     private var searchControls: some View {
         HStack(spacing: 10) {
             TaskSearchField(text: Binding(get: { query.text }, set: { query.text = $0 }), focusToken: searchFocusToken, escape: {
                 if !query.text.isEmpty { query.text = "" } else { focusList() }
-            }, enter: focusList).frame(minWidth: 140, maxWidth: .infinity).frame(height: 26)
+            }, enter: focusList).focused($workspaceFocus, equals: .search).frame(minWidth: 140, maxWidth: .infinity).frame(height: 26)
             Picker("Status", selection: Binding(get: { query.status }, set: { query.status = $0 })) {
                 ForEach(TaskQuery.Status.allCases) { Text($0.rawValue).tag($0) }
             }.labelsHidden().frame(width: 145).accessibilityLabel("Filter by status").accessibilityIdentifier("task-status-filter")
@@ -494,8 +495,8 @@ struct MainTaskWindowView: View {
     }
     private func taskRow(_ item: TodoItem, planning: Bool = false) -> some View {
         let index = orderingEnabled && planning ? planned.plan.today.firstIndex(where: { $0.id == item.id }) : nil
-        return TaskRowView(item: item, store: store, showPlanning: !planning, selected: selection == item.id, selectionFocused: focusedList == (planning ? .today : .all),
-            details: { selection = item.id; detailID = item.id; focusedList = scope }, preservedDraft: titleDrafts.draft(for: item.id),
+        return TaskRowView(item: item, store: store, showPlanning: !planning, selected: selection == item.id, selectionFocused: workspaceFocus == .list(planning ? .today : .all),
+            details: { selection = item.id; detailID = item.id; workspaceFocus = .list(scope) }, preservedDraft: titleDrafts.draft(for: item.id),
             moveUp: index.map { $0 > 0 } == true ? { move(item.id, by: -1) } : nil,
             moveDown: index.map { $0 < planned.plan.today.count - 1 } == true ? { move(item.id, by: 1) } : nil)
             .tag(item.id).transition(reduceMotion ? .identity : .opacity.combined(with: .move(edge: .top)))

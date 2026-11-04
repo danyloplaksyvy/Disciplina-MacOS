@@ -58,6 +58,14 @@ final class DisciplinaUITests: XCTestCase {
         selectTaskScope("Today")
         XCTAssertTrue(app.scrollViews["task-details"].staticTexts["Existing work"].exists)
         XCTAssertTrue(list.staticTexts["Existing work"].exists)
+        for _ in 0..<3 {
+            app.typeKey("f", modifierFlags: .command)
+            taskSearch.typeKey("a", modifierFlags: .command)
+            taskSearch.typeText("Existing")
+            XCTAssertEqual(taskSearch.value as? String, "Existing")
+            selectTaskScope("Today")
+            XCTAssertTrue(app.scrollViews["task-details"].staticTexts["Existing work"].exists)
+        }
     }
 
     func testTodayReorderingAndCompactDetails() {
