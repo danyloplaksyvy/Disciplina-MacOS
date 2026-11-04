@@ -25,7 +25,15 @@ struct TaskSearchField: NSViewRepresentable {
         if field.stringValue != text { field.stringValue = text }
         if field.focusToken != focusToken {
             field.focusToken = focusToken
-            if focusToken > 0 { field.requestFocus() }
+            if focusToken > 0 {
+                let requestedToken = focusToken
+                // Retained SwiftUI hosts may change their responder during this update.
+                // Apply an explicit search request after that update, not inside it.
+                DispatchQueue.main.async { [weak field] in
+                    guard let field, field.focusToken == requestedToken else { return }
+                    field.requestFocus()
+                }
+            }
         }
     }
     final class Field: NSSearchField {

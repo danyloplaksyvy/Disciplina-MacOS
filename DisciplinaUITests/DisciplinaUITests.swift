@@ -52,6 +52,7 @@ final class DisciplinaUITests: XCTestCase {
         XCTAssertTrue(list.staticTexts["Existing work"].waitForExistence(timeout: 5))
         list.staticTexts["Existing work"].click()
         app.typeKey("f", modifierFlags: .command)
+        XCTAssertEqual(app.radioButtons["All tasks"].value.map { String(describing: $0) }, "1")
         XCTAssertTrue(app.outlines["main-task-list"].waitForExistence(timeout: 5))
         taskSearch.typeText("Existing")
         selectTaskScope("Today")
@@ -296,15 +297,16 @@ final class DisciplinaUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["100 of 10000 tasks · Local storage"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.outlines["main-task-list"].staticTexts["Work 42-0"].exists)
         let list = app.outlines["main-task-list"]
-        // Target one known row rather than issuing hundreds of remote AX frame queries.
-        let anchor = list.staticTexts["Work 42-0"]
-        anchor.click()
-        XCTAssertTrue(anchor.isHittable)
-        let y = anchor.frame.minY
+        // Scroll position is exposed by the native scroll bar; no off-screen row lookup.
+        let scrollView = app.scrollViews.containing(.outline, identifier: "main-task-list").firstMatch
+        list.scroll(byDeltaX: 0, deltaY: -500)
+        let scrollBar = scrollView.scrollBars.firstMatch
+        XCTAssertTrue(scrollBar.waitForExistence(timeout: 5))
+        let position = scrollBar.value.map { String(describing: $0) }
+        XCTAssertNotNil(position)
         selectTaskScope("Today"); selectTaskScope("All tasks")
         XCTAssertEqual(taskSearch.value as? String, "Work 42-")
-        XCTAssertTrue(anchor.isHittable)
-        XCTAssertEqual(anchor.frame.minY, y, accuracy: 2)
+        XCTAssertEqual(scrollBar.value.map { String(describing: $0) }, position)
 
     }
 
