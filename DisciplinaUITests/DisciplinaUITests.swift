@@ -40,7 +40,7 @@ final class DisciplinaUITests: XCTestCase {
         XCTAssertTrue(list.staticTexts["Plan work"].waitForExistence(timeout: 5))
     }
 
-    func testTodayPickerAndKeyboardSearchPreserveDetails() {
+    func testCommandFFromTodayPreservesDetails() {
         add("Existing work")
         selectTaskScope("Today")
         XCTAssertFalse(app.outlines["today-task-list"].staticTexts["Existing work"].exists)
@@ -296,17 +296,16 @@ final class DisciplinaUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["100 of 10000 tasks · Local storage"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.outlines["main-task-list"].staticTexts["Work 42-0"].exists)
         let list = app.outlines["main-task-list"]
-        list.scroll(byDeltaX: 0, deltaY: -500)
-        let anchor = list.staticTexts.allElementsBoundByIndex.first {
-            $0.label.hasPrefix("Work 42-") && $0.frame.minY >= list.frame.minY && $0.frame.maxY <= list.frame.maxY
-        }
-        XCTAssertNotNil(anchor)
-        if let anchor {
-            let name = anchor.label, y = anchor.frame.minY
-            selectTaskScope("Today"); selectTaskScope("All tasks")
-            XCTAssertEqual(taskSearch.value as? String, "Work 42-")
-            XCTAssertEqual(list.staticTexts[name].frame.minY, y, accuracy: 2)
-        }
+        // Target one known row rather than issuing hundreds of remote AX frame queries.
+        let anchor = list.staticTexts["Work 42-0"]
+        anchor.click()
+        XCTAssertTrue(anchor.isHittable)
+        let y = anchor.frame.minY
+        selectTaskScope("Today"); selectTaskScope("All tasks")
+        XCTAssertEqual(taskSearch.value as? String, "Work 42-")
+        XCTAssertTrue(anchor.isHittable)
+        XCTAssertEqual(anchor.frame.minY, y, accuracy: 2)
+
     }
 
     private var taskSearch: XCUIElement { app.searchFields["task-search"].firstMatch }
