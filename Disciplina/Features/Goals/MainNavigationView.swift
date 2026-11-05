@@ -86,7 +86,7 @@ struct MainNavigationView: View {
 
 /// Opacity alone leaves AppKit-backed descendants participating in native events.
 /// Keep the host and its state alive, but hide the entire native subtree.
-private struct RetainedDestination<Content: View>: NSViewRepresentable {
+struct RetainedDestination<Content: View>: NSViewRepresentable {
     let isVisible: Bool
     @ViewBuilder var content: () -> Content
 

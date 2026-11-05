@@ -72,7 +72,7 @@ final class AppDependencies {
                 let location = try StoreLocation(); self.location = location
                 persistence = try location.open()
             }
-            #if DEBUG
+            #if DEBUG || SEARCH_PROFILING
             if testing && ProcessInfo.processInfo.arguments.contains("--seed-goals-performance") {
                 var snapshot = TaskSnapshot()
                 let date = Date(timeIntervalSince1970: 1700000000)

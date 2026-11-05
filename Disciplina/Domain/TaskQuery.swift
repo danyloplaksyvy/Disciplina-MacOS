@@ -13,6 +13,9 @@ struct TaskQuery: Equatable {
     var isActive: Bool { !trimmedText.isEmpty || status != .all || goal != .all }
 
     func matches(title: String, status taskStatus: TaskStatus, goalID: UUID?, locale: Locale = .current) -> Bool {
+        matches(title: title, status: taskStatus, goalID: goalID, query: trimmedText, locale: locale)
+    }
+    private func matches(title: String, status taskStatus: TaskStatus, goalID: UUID?, query: String, locale: Locale) -> Bool {
         switch status {
         case .all: break
         case .incomplete: if taskStatus == .completed { return false }
@@ -25,7 +28,6 @@ struct TaskQuery: Equatable {
         case .unassigned: if goalID != nil { return false }
         case .goal(let id): if goalID != id { return false }
         }
-        let query = trimmedText
         return query.isEmpty || title.range(of: query, options: [.caseInsensitive, .diacriticInsensitive], locale: locale) != nil
     }
     func matches(_ task: TodoItem, locale: Locale = .current) -> Bool {
@@ -33,6 +35,7 @@ struct TaskQuery: Equatable {
     }
     func project(_ groups: [TaskDayGroup], unavailable: Bool = false, locale: Locale = .current) -> TaskSearchResult {
         guard !unavailable else { return TaskSearchResult(groups: [], visibleIDs: [], totalCount: 0, unavailable: true) }
+        let query = trimmedText
         var ids: Set<UUID> = [], total = 0
         let filtered = groups.compactMap { group -> TaskDayGroup? in
             var result = group
@@ -40,7 +43,7 @@ struct TaskQuery: Equatable {
                 items.filter { item in
                     guard item.deletedAt == nil else { return false }
                     total += 1
-                    guard matches(item, locale: locale) else { return false }
+                    guard matches(title: item.title, status: item.status, goalID: item.goalID, query: query, locale: locale) else { return false }
                     ids.insert(item.id); return true
                 }
             }

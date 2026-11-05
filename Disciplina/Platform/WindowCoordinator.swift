@@ -1,4 +1,5 @@
 import AppKit
+import Observation
 
 @MainActor
 final class AppCoordinator: NSObject, NSApplicationDelegate {
@@ -40,4 +41,42 @@ final class AppCoordinator: NSObject, NSApplicationDelegate {
 @MainActor
 enum WindowCoordinator {
     static func activate() { NSApp.activate() }
+}
+
+
+/// Commands must observe native focus; reading NSApp.keyWindow in a SwiftUI body
+/// alone can leave a shortcut disabled after a sheet or another window closes.
+@MainActor @Observable
+final class WindowCommandState: NSObject {
+    private(set) var canFindTasks = false
+
+    override init() {
+        super.init()
+        let center = NotificationCenter.default
+        for name in [NSWindow.didBecomeKeyNotification, NSWindow.didResignKeyNotification,
+                     NSWindow.willBeginSheetNotification, NSWindow.didEndSheetNotification,
+                     NSApplication.didBecomeActiveNotification, NSApplication.didResignActiveNotification] {
+            center.addObserver(self, selector: #selector(focusChanged(_:)), name: name, object: nil)
+        }
+        refresh()
+    }
+
+    @objc private func focusChanged(_ notification: Notification) {
+        if notification.name == NSWindow.didBecomeKeyNotification {
+            let window = notification.object as? NSWindow
+            canFindTasks = window?.identifier?.rawValue == "main" && window?.attachedSheet == nil
+        } else if notification.name == NSApplication.didResignActiveNotification
+                    || notification.name == NSWindow.willBeginSheetNotification
+                    || notification.name == NSWindow.didResignKeyNotification {
+            canFindTasks = false
+        } else {
+            refresh()
+        }
+    }
+
+    private func refresh() {
+        let app = NSApplication.shared
+        canFindTasks = app.isActive && app.keyWindow?.identifier?.rawValue == "main"
+            && app.keyWindow?.attachedSheet == nil
+    }
 }
