@@ -251,7 +251,7 @@ struct MainTaskWindowView: View {
     let store: TaskStore
     var openSettings: () -> Void = {}
     private enum Scope: String, CaseIterable { case today = "Today", all = "All tasks" }
-    private enum WorkspaceFocus: Hashable { case list(Scope), search }
+    private enum WorkspaceFocus: Hashable { case list(Scope) }
     @State private var scope: Scope = .today
     @State private var todayQuery = TaskQuery()
     @State private var allQuery = TaskQuery()
@@ -357,7 +357,7 @@ struct MainTaskWindowView: View {
             .onReceive(NotificationCenter.default.publisher(for: .focusNewTask)) { _ in focusToken += 1 }
             .onReceive(NotificationCenter.default.publisher(for: .focusTaskSearch)) { _ in
                 scope = .all
-                workspaceFocus = .search
+                workspaceFocus = nil
                 // Apply the scope/layout update before assigning the native search responder.
                 DispatchQueue.main.async { searchFocusToken += 1 }
             }
@@ -473,7 +473,7 @@ struct MainTaskWindowView: View {
         HStack(spacing: 10) {
             TaskSearchField(text: Binding(get: { query.text }, set: { query.text = $0 }), focusToken: searchFocusToken, escape: {
                 if !query.text.isEmpty { query.text = "" } else { focusList() }
-            }, enter: focusList).focused($workspaceFocus, equals: .search).frame(minWidth: 140, maxWidth: .infinity).frame(height: 26)
+            }, enter: focusList).frame(minWidth: 140, maxWidth: .infinity).frame(height: 26)
             Picker("Status", selection: Binding(get: { query.status }, set: { query.status = $0 })) {
                 ForEach(TaskQuery.Status.allCases) { Text($0.rawValue).tag($0) }
             }.labelsHidden().frame(width: 145).accessibilityLabel("Filter by status").accessibilityIdentifier("task-status-filter")

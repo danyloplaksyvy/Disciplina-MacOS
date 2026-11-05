@@ -51,7 +51,13 @@ struct TaskSearchField: NSViewRepresentable {
         func requestFocus() { wantsFocus = true; applyFocus() }
         private func applyFocus() {
             guard wantsFocus, !isHiddenOrHasHiddenAncestor, let window, window.isKeyWindow else { return }
-            if window.makeFirstResponder(self) { wantsFocus = false }
+            // A text control uses the window's shared field editor as its actual
+            // responder. Selecting text activates that editor, rather than merely
+            // making the search control (or its SwiftUI wrapper) first responder.
+            selectText(nil)
+            if let editor = currentEditor(), window.firstResponder === editor {
+                wantsFocus = false
+            }
         }
     }
     @MainActor final class Coordinator: NSObject, NSSearchFieldDelegate {
