@@ -275,7 +275,8 @@ struct MainTaskWindowView: View {
     @State private var revealPlannedID: UUID?
     @State private var pendingPlannedID: UUID?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @FocusState private var workspaceFocus: WorkspaceFocus?
+    @State private var workspaceFocus: WorkspaceFocus?
+    @State private var listFocusToken = 0
     private var visibleIDs: Set<UUID> {
         if store.unavailable { return [] }
         if scope == .today {
@@ -325,8 +326,8 @@ struct MainTaskWindowView: View {
             StoreErrorView(store: store)
             TaskDetailSplit(showsDetails: store.items.contains { $0.id == detailID }) {
                 ZStack {
-                    RetainedDestination(isVisible: scope == .today) { plannedList }
-                    RetainedDestination(isVisible: scope == .all) { allList }
+                    RetainedTaskList(isVisible: scope == .today, focusToken: listFocusToken, focusChanged: { listFocusChanged(.today, $0) }) { plannedList }
+                    RetainedTaskList(isVisible: scope == .all, focusToken: listFocusToken, focusChanged: { listFocusChanged(.all, $0) }) { allList }
                 }
             } details: {
                 if let item = store.items.first(where: { $0.id == detailID }) {
@@ -439,15 +440,15 @@ struct MainTaskWindowView: View {
     }
     private func taskList<Content: View>(scope listScope: Scope, identifier: String, @ViewBuilder content: () -> Content) -> some View {
         List(selection: listSelection, content: content)
-            .listStyle(.inset).focused($workspaceFocus, equals: .list(listScope)).accessibilityIdentifier(identifier)
+            .listStyle(.inset).accessibilityIdentifier(identifier)
             .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: store.structureRevision)
             .onKeyPress(.space) {
-                guard workspaceFocus == .list(listScope), (NSApp.keyWindow?.firstResponder as? NSTextView)?.isEditable != true,
+                guard scope == listScope, NSApp.keyWindow?.firstResponder is NSOutlineView,
                       !store.unavailable, let selection, visibleIDs.contains(selection), let item = store.items.first(where: { $0.id == selection }) else { return .ignored }
                 store.setCompleted(id: item.id, isCompleted: !item.isCompleted); return .handled
             }
             .onKeyPress(.return) {
-                guard workspaceFocus == .list(listScope), (NSApp.keyWindow?.firstResponder as? NSTextView)?.isEditable != true,
+                guard scope == listScope, NSApp.keyWindow?.firstResponder is NSOutlineView,
                       !store.unavailable, let selection, visibleIDs.contains(selection) else { return .ignored }
                 detailID = selection; return .handled
             }
@@ -468,7 +469,11 @@ struct MainTaskWindowView: View {
         if let title = hiddenCreationTitle, query.matches(title: title, status: .todo, goalID: nil) { hiddenCreationTitle = nil }
     }
     private func clearFilters() { query = TaskQuery(); hiddenCreationTitle = nil }
-    private func focusList() { NSApp.keyWindow?.makeFirstResponder(nil); workspaceFocus = .list(scope) }
+    private func focusList() { listFocusToken += 1 }
+    private func listFocusChanged(_ listScope: Scope, _ focused: Bool) {
+        if focused { workspaceFocus = .list(listScope) }
+        else if workspaceFocus == .list(listScope) { workspaceFocus = nil }
+    }
     private var searchControls: some View {
         HStack(spacing: 10) {
             TaskSearchField(text: Binding(get: { query.text }, set: { query.text = $0 }), focusToken: searchFocusToken, escape: {
@@ -496,7 +501,7 @@ struct MainTaskWindowView: View {
     private func taskRow(_ item: TodoItem, planning: Bool = false) -> some View {
         let index = orderingEnabled && planning ? planned.plan.today.firstIndex(where: { $0.id == item.id }) : nil
         return TaskRowView(item: item, store: store, showPlanning: !planning, selected: selection == item.id, selectionFocused: workspaceFocus == .list(planning ? .today : .all),
-            details: { selection = item.id; detailID = item.id; workspaceFocus = .list(scope) }, preservedDraft: titleDrafts.draft(for: item.id),
+            details: { selection = item.id; detailID = item.id }, preservedDraft: titleDrafts.draft(for: item.id),
             moveUp: index.map { $0 > 0 } == true ? { move(item.id, by: -1) } : nil,
             moveDown: index.map { $0 < planned.plan.today.count - 1 } == true ? { move(item.id, by: 1) } : nil)
             .tag(item.id).transition(reduceMotion ? .identity : .opacity.combined(with: .move(edge: .top)))
@@ -591,4 +596,58 @@ private struct QuickActionsLayout: Layout {
 extension Notification.Name {
     static let focusTaskSearch = Notification.Name("Disciplina.focusTaskSearch")
     static let focusNewTask = Notification.Name("Disciplina.focusNewTask")
+}
+
+/// Each retained list owns its native responder. A SwiftUI FocusState shared across
+/// separate hosting roots can replay the hidden list's focus after a scope change.
+private struct RetainedTaskList<Content: View>: NSViewRepresentable {
+    let isVisible: Bool
+    let focusToken: Int
+    var focusChanged: (Bool) -> Void
+    @ViewBuilder var content: () -> Content
+
+    func makeNSView(context: Context) -> Host {
+        let host = Host(rootView: content())
+        host.sizingOptions = []
+        return host
+    }
+    func updateNSView(_ host: Host, context: Context) {
+        host.focusChanged = focusChanged
+        host.rootView = content()
+        host.isHidden = !isVisible
+        if host.focusToken != focusToken {
+            host.focusToken = focusToken
+            if isVisible {
+                DispatchQueue.main.async { [weak host] in host?.focusList() }
+            }
+        }
+    }
+    final class Host: NSHostingView<Content> {
+        var focusToken = 0
+        var focusChanged: ((Bool) -> Void)?
+        private var reportedFocus = false
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            NotificationCenter.default.removeObserver(self, name: NSWindow.didUpdateNotification, object: nil)
+            if let window {
+                NotificationCenter.default.addObserver(self, selector: #selector(windowUpdated), name: NSWindow.didUpdateNotification, object: window)
+            }
+        }
+        private func outline(in view: NSView) -> NSOutlineView? {
+            if let outline = view as? NSOutlineView { return outline }
+            return view.subviews.lazy.compactMap { self.outline(in: $0) }.first
+        }
+        func focusList() {
+            guard !isHiddenOrHasHiddenAncestor, let window, window.isKeyWindow else { return }
+            layoutSubtreeIfNeeded()
+            if let list = outline(in: self) { window.makeFirstResponder(list) }
+        }
+        @objc private func windowUpdated(_ notification: Notification) {
+            let focused = !isHiddenOrHasHiddenAncestor && window?.isKeyWindow == true &&
+                (window?.firstResponder as? NSView)?.isDescendant(of: self) == true
+            guard focused != reportedFocus else { return }
+            reportedFocus = focused
+            DispatchQueue.main.async { [weak self] in self?.focusChanged?(focused) }
+        }
+    }
 }
