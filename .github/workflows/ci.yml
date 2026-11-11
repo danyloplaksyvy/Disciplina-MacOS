@@ -74,14 +74,14 @@ jobs:
           dark = 'true' if os.environ['APPEARANCE'] == 'dark' else 'false'
           subprocess.run(['osascript', '-e', f'tell application "System Events" to tell appearance preferences to set dark mode to {dark}'], check=True, timeout=30)
           PYTHON
-      - name: Scope focus and large-list scroll gate
+      - name: Search, scrolling and full-screen status checks
         run: |
           set -o pipefail
-          xcodebuild test -project Disciplina.xcodeproj -scheme Disciplina -destination 'platform=macOS,arch=arm64' -derivedDataPath DerivedData -only-testing:DisciplinaUITests/DisciplinaUITests/testCommandFFromTodayPreservesDetails -only-testing:DisciplinaUITests/DisciplinaUITests/testHundredGoalsWithHundredTasksRemainNavigable -resultBundlePath scope-tests.xcresult CODE_SIGN_IDENTITY=- ARCHS=arm64 | tee scope-tests.log
+          xcodebuild test -project Disciplina.xcodeproj -scheme Disciplina -destination 'platform=macOS,arch=arm64' -derivedDataPath DerivedData -only-testing:DisciplinaUITests/DisciplinaUITests/testCommandFFromTodayPreservesDetails -only-testing:DisciplinaUITests/DisciplinaUITests/testHundredGoalsWithHundredTasksRemainNavigable -only-testing:DisciplinaUITests/DisciplinaUITests/testStatusItemOverFullScreenTextEdit -resultBundlePath scope-tests.xcresult CODE_SIGN_IDENTITY=- ARCHS=arm64 | tee scope-tests.log
       - name: Remaining UI acceptance tests
         run: |
           set -o pipefail
-          xcodebuild test-without-building -project Disciplina.xcodeproj -scheme Disciplina -destination 'platform=macOS,arch=arm64' -derivedDataPath DerivedData -only-testing:DisciplinaUITests -skip-testing:DisciplinaUITests/DisciplinaUITests/testCommandFFromTodayPreservesDetails -skip-testing:DisciplinaUITests/DisciplinaUITests/testHundredGoalsWithHundredTasksRemainNavigable -resultBundlePath ui-tests.xcresult | tee ui-tests.log
+          xcodebuild test-without-building -project Disciplina.xcodeproj -scheme Disciplina -destination 'platform=macOS,arch=arm64' -derivedDataPath DerivedData -only-testing:DisciplinaUITests -skip-testing:DisciplinaUITests/DisciplinaUITests/testCommandFFromTodayPreservesDetails -skip-testing:DisciplinaUITests/DisciplinaUITests/testHundredGoalsWithHundredTasksRemainNavigable -skip-testing:DisciplinaUITests/DisciplinaUITests/testStatusItemOverFullScreenTextEdit -resultBundlePath ui-tests.xcresult | tee ui-tests.log
       - name: Export UI screenshots
         if: always()
         run: |

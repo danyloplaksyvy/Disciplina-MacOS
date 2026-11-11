@@ -11,8 +11,8 @@ final class PopoverMetrics {
 @MainActor
 final class MenuBarCoordinator: NSObject, NSWindowDelegate {
     private let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-    private let panel = StatusPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel],
-                                    backing: .buffered, defer: false)
+    private var panel: StatusPanel?
+    private var makeContent: (() -> NSView)?
     private var anchor: NSRect?
     private var display: NSScreen?
     private var localMouse: Any?
@@ -23,17 +23,6 @@ final class MenuBarCoordinator: NSObject, NSWindowDelegate {
     init(dependencies: AppDependencies, openMain: @escaping () -> Void, openSettings: @escaping () -> Void) {
         self.store = dependencies.store
         super.init()
-        panel.identifier = .init("status-panel")
-        panel.title = "Disciplina menu"
-        panel.isReleasedWhenClosed = false
-        panel.isFloatingPanel = true
-        panel.level = .floating
-        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .canJoinAllApplications]
-        panel.hidesOnDeactivate = false
-        panel.hasShadow = true
-        panel.isOpaque = false
-        panel.backgroundColor = .clear
-        panel.delegate = self
         NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(spaceChanged),
             name: NSWorkspace.activeSpaceDidChangeNotification, object: nil)
         setContent(dependencies: dependencies, openMain: openMain, openSettings: openSettings)
@@ -43,10 +32,10 @@ final class MenuBarCoordinator: NSObject, NSWindowDelegate {
         appearanceObserver = item.button?.observe(\.effectiveAppearance, options: [.new]) { [weak self] _, _ in
             Task { @MainActor in self?.update() }
         }
-        observe()
     }
     func setContent(dependencies: AppDependencies, openMain: @escaping () -> Void, openSettings: @escaping () -> Void) {
         close()
+        panel?.contentView = nil
         store = dependencies.store
         if let store {
             host(MenuBarTaskView(store: store, metrics: metrics,
@@ -89,10 +78,33 @@ final class MenuBarCoordinator: NSObject, NSWindowDelegate {
         button.toolTip = name.map { "Timing \($0): \(title)" } ?? label
     }
     private func host<Content: View>(_ content: Content) {
-        let view = StatusContent(rootView: content.background(.regularMaterial).clipShape(RoundedRectangle(cornerRadius: 10)))
-        view.sizingOptions = [.intrinsicContentSize]
-        view.sizeChanged = { [weak self] in self?.positionPanel() }
-        panel.contentView = view
+        makeContent = { [weak self] in
+            let view = StatusContent(rootView: content.background(.regularMaterial).clipShape(RoundedRectangle(cornerRadius: 10)))
+            view.sizingOptions = [.intrinsicContentSize]
+            view.sizeChanged = { [weak self] in self?.positionPanel() }
+            return view
+        }
+    }
+
+    private func presentationPanel() -> StatusPanel {
+        if let panel { return panel }
+        let panel = StatusPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel],
+                                backing: .buffered, defer: false)
+        panel.identifier = .init("status-panel")
+        panel.title = "Disciplina menu"
+        panel.isReleasedWhenClosed = false
+        panel.isFloatingPanel = true
+        panel.level = .floating
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .canJoinAllApplications]
+        panel.hidesOnDeactivate = false
+        panel.hasShadow = true
+        panel.isOpaque = false
+        panel.backgroundColor = .clear
+        panel.delegate = self
+        panel.contentView = nil
+        panel.dismiss = { [weak self] in self?.close() }
+        self.panel = panel
+        return panel
     }
 
     private var buttonRect: NSRect? {
@@ -101,9 +113,11 @@ final class MenuBarCoordinator: NSObject, NSWindowDelegate {
     }
 
     @objc private func toggle() {
-        if panel.isVisible { close(); return }
+        if panel?.isVisible == true { close(); return }
         guard let rect = buttonRect,
               let screen = NSScreen.screens.first(where: { $0.frame.contains(NSPoint(x: rect.midX, y: rect.midY)) }) else { return }
+        let panel = presentationPanel()
+        if panel.contentView == nil { panel.contentView = makeContent?() }
         display = screen
         anchor = rect
         metrics.maximumHeight = min(600, screen.visibleFrame.height - 32)
@@ -114,7 +128,7 @@ final class MenuBarCoordinator: NSObject, NSWindowDelegate {
     }
 
     private func positionPanel() {
-        guard let anchor, let display, let content = panel.contentView else { return }
+        guard let panel, let anchor, let display, let content = panel.contentView else { return }
         let available = display.visibleFrame
         let width = min(380, available.width)
         let top = min(anchor.minY - 2, available.maxY)
@@ -147,7 +161,7 @@ final class MenuBarCoordinator: NSObject, NSWindowDelegate {
         outsideMouse = nil
         anchor = nil
         display = nil
-        panel.orderOut(nil)
+        panel?.orderOut(nil)
         item.button?.highlight(false)
     }
     func invalidate() {
@@ -158,6 +172,8 @@ final class MenuBarCoordinator: NSObject, NSWindowDelegate {
 }
 
 private final class StatusPanel: NSPanel {
+    var dismiss: (() -> Void)?
+    override func cancelOperation(_ sender: Any?) { dismiss?() }
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
 }
