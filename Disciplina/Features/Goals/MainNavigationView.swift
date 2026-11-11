@@ -67,7 +67,6 @@ struct MainNavigationView: View {
                 .onReceive(NotificationCenter.default.publisher(for: .focusTaskSearch)) { _ in
                     if destination != .tasks {
                         navigate(.tasks)
-                        DispatchQueue.main.async { NotificationCenter.default.post(name: .focusTaskSearch, object: nil) }
                     }
                 }
                 .onReceive(NotificationCenter.default.publisher(for: .focusNewTask)) { _ in

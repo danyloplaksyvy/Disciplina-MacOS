@@ -260,7 +260,6 @@ struct MainTaskWindowView: View {
         nonmutating set { if scope == .today { todayQuery = newValue } else { allQuery = newValue } }
     }
     @State private var focusToken = 0
-    @State private var searchFocusToken = 0
     @State private var resultRevision = 0
     @State private var results = TaskSearchResult(groups: [], visibleIDs: [], totalCount: 0, unavailable: false)
     @State private var planned = PlannedTaskResults()
@@ -359,8 +358,6 @@ struct MainTaskWindowView: View {
             .onReceive(NotificationCenter.default.publisher(for: .focusTaskSearch)) { _ in
                 scope = .all
                 workspaceFocus = nil
-                // Apply the scope/layout update before assigning the native search responder.
-                DispatchQueue.main.async { searchFocusToken += 1 }
             }
             .onChange(of: ObjectIdentifier(store)) { _, _ in
                 selection = nil; detailID = nil; titleDrafts = TaskTitleDrafts(); collapsedDays = []
@@ -476,7 +473,7 @@ struct MainTaskWindowView: View {
     }
     private var searchControls: some View {
         HStack(spacing: 10) {
-            TaskSearchField(text: Binding(get: { query.text }, set: { query.text = $0 }), focusToken: searchFocusToken, escape: {
+            TaskSearchField(text: Binding(get: { query.text }, set: { query.text = $0 }), focusToken: 0, escape: {
                 if !query.text.isEmpty { query.text = "" } else { focusList() }
             }, enter: focusList).frame(minWidth: 140, maxWidth: .infinity).frame(height: 26)
             Picker("Status", selection: Binding(get: { query.status }, set: { query.status = $0 })) {

@@ -41,10 +41,15 @@ struct TaskSearchField: NSViewRepresentable {
         private var wantsFocus = false
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
+            if let main = window as? TaskWindow { main.taskSearch = self }
             NotificationCenter.default.removeObserver(self, name: NSWindow.didBecomeKeyNotification, object: nil)
             if let window {
                 NotificationCenter.default.addObserver(self, selector: #selector(becameKey), name: NSWindow.didBecomeKeyNotification, object: window)
             }
+            applyFocus()
+        }
+        override func viewDidUnhide() {
+            super.viewDidUnhide()
             applyFocus()
         }
         @objc private func becameKey(_ notification: Notification) { applyFocus() }

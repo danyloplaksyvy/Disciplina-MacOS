@@ -25,8 +25,7 @@ struct DisciplinaApp: App {
             }
             CommandGroup(after: .textEditing) {
                 Button("Find Tasks") {
-                    guard NSApp.keyWindow?.identifier?.rawValue == "main", NSApp.keyWindow?.attachedSheet == nil else { return }
-                    NotificationCenter.default.post(name: .focusTaskSearch, object: nil)
+                    (NSApp.keyWindow as? TaskWindow)?.findTasks()
                 }.keyboardShortcut("f")
                     .disabled(!commandState.canFindTasks)
             }
