@@ -641,9 +641,13 @@ final class DisciplinaUITests: XCTestCase {
         XCTAssertTrue(app.textFields["new-task"].waitForExistence(timeout: 10))
         let finder = XCUIApplication(bundleIdentifier: "com.apple.finder")
         finder.activate()
+        app.statusItems.firstMatch.click()
+        let statusPanel = app.windows["status-panel"]
+        XCTAssertTrue(statusPanel.buttons["Open Disciplina"].waitForExistence(timeout: 3))
         finder.typeKey(" ", modifierFlags: [.control, .option])
         let capture = app.textFields["capture-task"]
         XCTAssertTrue(capture.waitForExistence(timeout: 5))
+        XCTAssertFalse(statusPanel.exists)
         app.typeText("From Finder")
         app.typeKey(" ", modifierFlags: [.control, .option])
         XCTAssertEqual(capture.value as? String, "From Finder")
@@ -702,6 +706,10 @@ final class DisciplinaUITests: XCTestCase {
         let list = app.descendants(matching: .any)["popover-task-list"].firstMatch
         XCTAssertTrue(list.waitForExistence(timeout: 3))
         XCTAssertTrue(list.staticTexts["Shared task"].exists)
+        app.windows["main"].textFields["new-task"].click()
+        XCTAssertFalse(list.exists)
+        statusItem.click()
+        XCTAssertTrue(list.waitForExistence(timeout: 3))
         list.buttons["Complete Shared task"].click()
         app.buttons["Open Disciplina"].click()
         XCTAssertTrue(app.buttons["Reopen Shared task"].waitForExistence(timeout: 3))
@@ -831,7 +839,11 @@ extension DisciplinaUITests {
         textEdit.menuBars.menuBarItems["View"].click()
         let enter = textEdit.menuItems["Enter Full Screen"]
         if enter.exists { enter.click() } else { textEdit.typeKey(.escape, modifierFlags: []) }
-        let display = CGDisplayBounds(CGMainDisplayID())
+        var displayID = CGDirectDisplayID()
+        var displayCount: UInt32 = 0
+        XCTAssertEqual(CGGetDisplaysWithPoint(window.frame.centerPoint, 1, &displayID, &displayCount), .success)
+        XCTAssertEqual(displayCount, 1)
+        let display = CGDisplayBounds(displayID)
         let editorPID = try XCTUnwrap(NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.TextEdit").first?.processIdentifier)
         func fullScreenWindowNumber() -> Int? {
             let entries = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? []
@@ -850,7 +862,7 @@ extension DisciplinaUITests {
         let externalID = try XCTUnwrap(fullScreenWindowNumber())
         func clickStatus() {
             let top = window.coordinate(withNormalizedOffset: .zero)
-            let reveal = top.withOffset(CGVector(dx: display.width * 0.75 - window.frame.minX,
+            let reveal = top.withOffset(CGVector(dx: display.minX + display.width * 0.75 - window.frame.minX,
                                                  dy: display.minY + 1 - window.frame.minY))
             reveal.hover()
             // System UI animates independently of the task application's AX tree.
@@ -867,7 +879,18 @@ extension DisciplinaUITests {
         XCTAssertEqual(fullScreenWindowNumber(), externalID)
         let title = "Screen work " + id.prefix(6)
         XCTAssertEqual(NSWorkspace.shared.frontmostApplication?.processIdentifier, editorPID)
-        XCTAssertTrue(display.contains(panel.frame))
+        let panelRect = panel.frame
+        XCTAssertTrue(display.contains(panelRect))
+        let ordered = try XCTUnwrap(CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements],
+                                                                kCGNullWindowID) as? [[String: Any]])
+        let editorIndex = try XCTUnwrap(ordered.firstIndex { $0[kCGWindowNumber as String] as? Int == externalID })
+        let appPIDs = NSRunningApplication.runningApplications(withBundleIdentifier: "com.danyloplaksyvy.Disciplina").map(\.processIdentifier)
+        XCTAssertTrue(ordered.prefix(editorIndex).contains { entry in
+            guard let pid = entry[kCGWindowOwnerPID as String] as? Int32, appPIDs.contains(pid),
+                  let dictionary = entry[kCGWindowBounds as String] as? [String: Any],
+                  let bounds = CGRect(dictionaryRepresentation: dictionary as CFDictionary) else { return false }
+            return bounds.insetBy(dx: -2, dy: -2).contains(panelRect) && abs(bounds.width - panelRect.width) < 4
+        }, "The status panel must be onscreen in front of TextEdit.")
         XCTAssertGreaterThanOrEqual(panel.frame.minY, status.frame.maxY - 2)
         textEdit.typeText(title + "\n")
         let rows = app.descendants(matching: .any)["popover-task-list"].firstMatch.staticTexts.matching(identifier: title)
