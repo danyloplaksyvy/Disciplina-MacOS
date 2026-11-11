@@ -469,7 +469,7 @@ final class DisciplinaUITests: XCTestCase {
         list.staticTexts["Recover from popover"].rightClick()
         app.windows["main"].menuItems["Delete"].click()
         app.statusItems.firstMatch.click()
-        let popover = app.popovers.firstMatch
+        let popover = app.windows["status-panel"]
         XCTAssertTrue(popover.buttons["Undo"].waitForExistence(timeout: 5))
         popover.buttons["Undo"].click()
         XCTAssertTrue(popover.staticTexts["Recover from popover"].waitForExistence(timeout: 5))
@@ -800,4 +800,92 @@ final class DisciplinaUITests: XCTestCase {
         app.menuItems["Exit Full Screen"].click()
     }
 
+}
+
+extension DisciplinaUITests {
+    /// Drive screen coordinates through TextEdit. Sending events to Disciplina
+    /// can activate its main window and mask a Space transition.
+    func testStatusItemOverFullScreenTextEdit() throws {
+        let id = UUID().uuidString
+        let status = app.statusItems.firstMatch
+        XCTAssertTrue(status.waitForExistence(timeout: 8))
+        let fixture = FileManager.default.temporaryDirectory.appendingPathComponent("Disciplina-\(id).txt")
+        try "Full-screen fixture".write(to: fixture, atomically: true, encoding: .utf8)
+        addTeardownBlock { try? FileManager.default.removeItem(at: fixture) }
+        let open = Process()
+        open.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+        open.arguments = ["-a", "TextEdit", fixture.path]
+        try open.run()
+        open.waitUntilExit()
+        XCTAssertEqual(open.terminationStatus, 0)
+        let textEdit = XCUIApplication(bundleIdentifier: "com.apple.TextEdit")
+        let window = textEdit.windows.containing(NSPredicate(format: "title CONTAINS %@", id)).firstMatch
+        XCTAssertTrue(window.waitForExistence(timeout: 8))
+        addTeardownBlock { @MainActor in
+            if window.exists {
+                window.buttons[XCUIIdentifierCloseWindow].click()
+                let discard = window.sheets.buttons["Don't Save"]
+                if discard.exists { discard.click() }
+            }
+        }
+        textEdit.menuBars.menuBarItems["View"].click()
+        let enter = textEdit.menuItems["Enter Full Screen"]
+        if enter.exists { enter.click() } else { textEdit.typeKey(.escape, modifierFlags: []) }
+        let display = CGDisplayBounds(CGMainDisplayID())
+        let editorPID = try XCTUnwrap(NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.TextEdit").first?.processIdentifier)
+        func fullScreenWindowNumber() -> Int? {
+            let entries = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? []
+            return entries.first { entry in
+                guard entry[kCGWindowOwnerPID as String] as? Int32 == editorPID,
+                      entry[kCGWindowLayer as String] as? Int == 0,
+                      let dictionary = entry[kCGWindowBounds as String] as? [String: Any],
+                      let bounds = CGRect(dictionaryRepresentation: dictionary as CFDictionary) else { return false }
+                return abs(bounds.height - display.height) < 80 && abs(bounds.width - display.width) < 3 && abs(bounds.minX - display.minX) < 3
+            }?[kCGWindowNumber as String] as? Int
+        }
+        func waitUntil(_ condition: @escaping () -> Bool) -> Bool {
+            XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in condition() }, object: nil)], timeout: 8) == .completed
+        }
+        XCTAssertTrue(waitUntil { fullScreenWindowNumber() != nil })
+        let externalID = try XCTUnwrap(fullScreenWindowNumber())
+        func clickStatus() {
+            let top = window.coordinate(withNormalizedOffset: .zero)
+            let reveal = top.withOffset(CGVector(dx: display.width * 0.75 - window.frame.minX,
+                                                 dy: display.minY + 1 - window.frame.minY))
+            reveal.hover()
+            // System UI animates independently of the task application's AX tree.
+            RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.8))
+            XCTAssertTrue(waitUntil { display.contains(status.frame.centerPoint) && status.frame.height > 0 })
+            let point = status.frame.centerPoint
+            print("Status click at \(point), menu-bar frame \(status.frame)")
+            top.withOffset(CGVector(dx: point.x - window.frame.minX, dy: point.y - window.frame.minY)).click()
+        }
+        let panel = app.windows["status-panel"]
+        let openButton = panel.buttons["Open Disciplina"]
+        clickStatus()
+        XCTAssertTrue(openButton.waitForExistence(timeout: 5))
+        XCTAssertEqual(fullScreenWindowNumber(), externalID)
+        let title = "Screen work " + id.prefix(6)
+        XCTAssertEqual(NSWorkspace.shared.frontmostApplication?.processIdentifier, editorPID)
+        XCTAssertTrue(display.contains(panel.frame))
+        XCTAssertGreaterThanOrEqual(panel.frame.minY, status.frame.maxY - 2)
+        textEdit.typeText(title + "\n")
+        let rows = app.descendants(matching: .any)["popover-task-list"].firstMatch.staticTexts.matching(identifier: title)
+        XCTAssertTrue(rows.firstMatch.waitForExistence(timeout: 5))
+        XCTAssertEqual(rows.count, 1)
+        XCTAssertEqual(fullScreenWindowNumber(), externalID)
+        let screenshot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        screenshot.name = "status-over-full-screen-TextEdit"; screenshot.lifetime = .keepAlways; add(screenshot)
+        textEdit.typeKey(.escape, modifierFlags: [])
+        XCTAssertTrue(waitUntil { !openButton.exists })
+        clickStatus()
+        XCTAssertTrue(openButton.waitForExistence(timeout: 5))
+        XCTAssertEqual(fullScreenWindowNumber(), externalID)
+        clickStatus()
+        XCTAssertTrue(waitUntil { !openButton.exists })
+    }
+}
+
+private extension CGRect {
+    var centerPoint: CGPoint { CGPoint(x: midX, y: midY) }
 }
