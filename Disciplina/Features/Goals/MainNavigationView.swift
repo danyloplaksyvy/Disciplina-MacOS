@@ -67,7 +67,6 @@ struct MainNavigationView: View {
                 .onReceive(NotificationCenter.default.publisher(for: .focusTaskSearch)) { _ in
                     if destination != .tasks {
                         navigate(.tasks)
-                        DispatchQueue.main.async { NotificationCenter.default.post(name: .focusTaskSearch, object: nil) }
                     }
                 }
                 .onReceive(NotificationCenter.default.publisher(for: .focusNewTask)) { _ in
@@ -86,7 +85,7 @@ struct MainNavigationView: View {
 
 /// Opacity alone leaves AppKit-backed descendants participating in native events.
 /// Keep the host and its state alive, but hide the entire native subtree.
-private struct RetainedDestination<Content: View>: NSViewRepresentable {
+struct RetainedDestination<Content: View>: NSViewRepresentable {
     let isVisible: Bool
     @ViewBuilder var content: () -> Content
 

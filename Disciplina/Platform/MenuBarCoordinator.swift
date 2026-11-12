@@ -9,17 +9,22 @@ final class PopoverMetrics {
 }
 
 @MainActor
-final class MenuBarCoordinator: NSObject, NSPopoverDelegate {
+final class MenuBarCoordinator: NSObject, NSWindowDelegate {
     private let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-    private let popover = NSPopover()
+    private var panel: StatusPanel?
+    private var makeContent: (() -> NSView)?
+    private var anchor: NSRect?
+    private var display: NSScreen?
+    private var localMouse: Any?
+    private var outsideMouse: Any?
     private let metrics = PopoverMetrics()
     private var store: TaskStore?
     private var appearanceObserver: NSKeyValueObservation?
     init(dependencies: AppDependencies, openMain: @escaping () -> Void, openSettings: @escaping () -> Void) {
         self.store = dependencies.store
         super.init()
-        popover.behavior = .transient
-        popover.delegate = self
+        NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(spaceChanged),
+            name: NSWorkspace.activeSpaceDidChangeNotification, object: nil)
         setContent(dependencies: dependencies, openMain: openMain, openSettings: openSettings)
         item.button?.target = self; item.button?.action = #selector(toggle)
         item.button?.image = NSImage(systemSymbolName: "checkmark.circle", accessibilityDescription: nil)
@@ -27,16 +32,16 @@ final class MenuBarCoordinator: NSObject, NSPopoverDelegate {
         appearanceObserver = item.button?.observe(\.effectiveAppearance, options: [.new]) { [weak self] _, _ in
             Task { @MainActor in self?.update() }
         }
-        observe()
     }
     func setContent(dependencies: AppDependencies, openMain: @escaping () -> Void, openSettings: @escaping () -> Void) {
         close()
+        panel?.contentView = nil
         store = dependencies.store
         if let store {
-            popover.contentViewController = PopoverHostingController(rootView: MenuBarTaskView(store: store, metrics: metrics,
+            host(MenuBarTaskView(store: store, metrics: metrics,
                 openMain: { [weak self] in self?.close(); openMain() }, openSettings: { [weak self] in self?.close(); openSettings() }, close: { [weak self] in self?.close() }))
         } else {
-            popover.contentViewController = PopoverHostingController(rootView: StartupFailureView(dependencies: dependencies).frame(width: 380))
+            host(StartupFailureView(dependencies: dependencies).frame(width: 380))
         }
         observe()
     }
@@ -72,37 +77,118 @@ final class MenuBarCoordinator: NSObject, NSPopoverDelegate {
         button.setAccessibilityLabel(label)
         button.toolTip = name.map { "Timing \($0): \(title)" } ?? label
     }
+    private func host<Content: View>(_ content: Content) {
+        makeContent = { [weak self] in
+            let view = StatusContent(rootView: content.background(.regularMaterial).clipShape(RoundedRectangle(cornerRadius: 10)))
+            view.sizingOptions = [.intrinsicContentSize]
+            view.sizeChanged = { [weak self] in self?.positionPanel() }
+            return view
+        }
+    }
+
+    private func presentationPanel() -> StatusPanel {
+        if let panel { return panel }
+        let panel = StatusPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel],
+                                backing: .buffered, defer: false)
+        panel.identifier = .init("status-panel")
+        panel.title = "Disciplina menu"
+        panel.isReleasedWhenClosed = false
+        panel.isFloatingPanel = true
+        panel.level = .floating
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .canJoinAllApplications]
+        panel.hidesOnDeactivate = false
+        panel.hasShadow = true
+        panel.isOpaque = false
+        panel.backgroundColor = .clear
+        panel.delegate = self
+        panel.contentView = nil
+        panel.dismiss = { [weak self] in self?.close() }
+        self.panel = panel
+        return panel
+    }
+
+    private var buttonRect: NSRect? {
+        guard let button = item.button, let window = button.window else { return nil }
+        return window.convertToScreen(button.convert(button.bounds, to: nil))
+    }
+
     @objc private func toggle() {
-        if popover.isShown { close(); return }
-        guard let button = item.button else { return }
-        metrics.maximumHeight = min(600, (button.window?.screen?.visibleFrame.height ?? 800) - 32)
-        popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+        if panel?.isVisible == true { close(); return }
+        guard let rect = buttonRect,
+              let screen = NSScreen.screens.first(where: { $0.frame.contains(NSPoint(x: rect.midX, y: rect.midY)) }) else { return }
+        let panel = presentationPanel()
+        if panel.contentView == nil { panel.contentView = makeContent?() }
+        display = screen
+        anchor = rect
+        metrics.maximumHeight = min(600, screen.visibleFrame.height - 32)
+        positionPanel()
+        panel.makeKeyAndOrderFront(nil)
+        item.button?.highlight(true)
+        observeOutsideClicks()
     }
-    func popoverWillShow(_ notification: Notification) {
-        configurePopoverWindow(popover.contentViewController?.view.window)
+
+    private func positionPanel() {
+        guard let panel, let anchor, let display, let content = panel.contentView else { return }
+        let available = display.visibleFrame
+        let width = min(380, available.width)
+        let top = min(anchor.minY - 2, available.maxY)
+        let height = min(max(1, ceil(content.fittingSize.height)), metrics.maximumHeight, max(1, top - available.minY))
+        let x = min(max(available.minX, anchor.midX - width / 2), available.maxX - width)
+        let frame = NSRect(x: x.rounded(), y: top - height, width: width, height: height)
+        if panel.frame != frame { panel.setFrame(frame, display: true) }
     }
-    func popoverDidShow(_ notification: Notification) {
-        guard let window = popover.contentViewController?.view.window else { return }
-        configurePopoverWindow(window)
-        window.orderFrontRegardless()
-        window.makeKey()
-        metrics.focusToken += 1
+
+    func windowDidBecomeKey(_ notification: Notification) { metrics.focusToken += 1 }
+
+    private func observeOutsideClicks() {
+        let clicks: NSEvent.EventTypeMask = [.leftMouseDown, .rightMouseDown, .otherMouseDown]
+        localMouse = NSEvent.addLocalMonitorForEvents(matching: clicks) { [weak self] event in
+            if let self, event.window !== self.panel, event.window?.parent !== self.panel,
+               self.buttonRect?.contains(NSEvent.mouseLocation) != true { self.close() }
+            return event
+        }
+        outsideMouse = NSEvent.addGlobalMonitorForEvents(matching: clicks) { [weak self] _ in
+            guard let self, self.buttonRect?.contains(NSEvent.mouseLocation) != true else { return }
+            self.close()
+        }
     }
-    func close() { popover.performClose(nil) }
-    func invalidate() { close(); NSStatusBar.system.removeStatusItem(item) }
+
+    @objc private func spaceChanged() { close() }
+    func close() {
+        if let localMouse { NSEvent.removeMonitor(localMouse) }
+        if let outsideMouse { NSEvent.removeMonitor(outsideMouse) }
+        localMouse = nil
+        outsideMouse = nil
+        anchor = nil
+        display = nil
+        panel?.orderOut(nil)
+        item.button?.highlight(false)
+    }
+    func invalidate() {
+        close()
+        NSWorkspace.shared.notificationCenter.removeObserver(self)
+        NSStatusBar.system.removeStatusItem(item)
+    }
 }
 
-/// Configure only the popover's window; never activate or order the task window.
-@MainActor private func configurePopoverWindow(_ window: NSWindow?) {
-    guard let window else { return }
-    window.level = .floating
-    window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .canJoinAllApplications]
-    window.hidesOnDeactivate = false
+private final class StatusPanel: NSPanel {
+    var dismiss: (() -> Void)?
+    override func cancelOperation(_ sender: Any?) { dismiss?() }
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { false }
 }
 
-@MainActor private final class PopoverHostingController<Content: View>: NSHostingController<Content> {
-    override func viewWillAppear() {
-        super.viewWillAppear()
-        configurePopoverWindow(view.window)
+/// SwiftUI changes its intrinsic height when a task or Undo row appears.
+private final class StatusContent<Content: View>: NSHostingView<Content> {
+    var sizeChanged: (() -> Void)?
+    private var pendingResize = false
+    override func invalidateIntrinsicContentSize() {
+        super.invalidateIntrinsicContentSize()
+        guard !pendingResize, sizeChanged != nil else { return }
+        pendingResize = true
+        DispatchQueue.main.async { [weak self] in
+            self?.pendingResize = false
+            self?.sizeChanged?()
+        }
     }
 }

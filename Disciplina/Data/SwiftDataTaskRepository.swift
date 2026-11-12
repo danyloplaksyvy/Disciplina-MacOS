@@ -17,6 +17,7 @@ final class SwiftDataTaskRepository: TaskRepository {
               sessions.allSatisfy({ $0.endReasonRaw == nil || SessionEndReason(rawValue: $0.endReasonRaw!) != nil })
         else { throw DataError.invalidSnapshot }
         for task in tasks { if let data = task.scheduledDayData { _ = try JSONDecoder().decode(LocalDay.self, from: data) } }
+        for task in tasks { if let data = task.plannedDayData { _ = try JSONDecoder().decode(LocalDay.self, from: data) } }
         for task in tasks { if let data = task.appearanceData { _ = try JSONDecoder().decode(TaskAppearance.self, from: data) } }
         for session in sessions {
             if let data = session.allocationData { _ = try JSONDecoder().decode([DailyAllocation].self, from: data) }

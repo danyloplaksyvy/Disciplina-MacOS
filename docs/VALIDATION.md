@@ -4,7 +4,40 @@
 
 ## Environment
 
-Development host: Apple Silicon macOS. Earlier milestones used Command Line Tools with Swift 6.3.2 and GitHub Actions for full builds. Xcode 27.1 became available locally on October 26; local full builds and 74 unit/persistence tests pass. CI continues validating with Xcode 26.6. Local English-title UI automation requires an English keyboard input source; a run with RussianWin injected only spaces and is not counted as a functional pass.
+Development host: Apple Silicon macOS. Earlier milestones used Command Line Tools with Swift 6.3.2 and GitHub Actions for full builds. Xcode 27.1 became available locally on October 26; local build and test results are recorded per release below. CI continues validating with Xcode 26.6. Local English-title UI automation requires an English keyboard input source; a run with RussianWin injected only spaces and is not counted as a functional pass.
+
+## Today inside Tasks — November 11, 2026
+
+The development app opens Tasks with Today selected. Today and All tasks preserve their own filters and scroll positions and share selection, details, and drafts. The revision uses schema V7 and JSON format 6.
+
+- Application and test source `f68074db929f97d71efd0bdabfa40db4fa696ac8`. Version 1.2.0, build 8.
+- Four previously failing local UI tests passed on this source. They cover Command-F after choosing filters, resizing to compact navigation, and editing a title, plus Escape after switching scopes with an open detail and a creation draft. Tests used disposable records on macOS 26.6.2.
+- A local responder trace reproduced a retained list taking focus after Find had activated search. The main window now routes Find to the native search editor. Explicit mouse and keyboard navigation can still leave search.
+- The command-line suite passed 81 tests during this revision. Its planning projection tests cover ordering, temporary expansion, combined restrictions, and unavailable storage. Earlier focused checks covered Today creation, completion, removal, Undo, add-existing, and compact details.
+- The CI workflow on [PR #4](https://github.com/danyloplaksyvy/Disciplina-MacOS/pull/4/checks) runs unit and persistence tests plus the full UI suite in both appearances. Two of the UI tests exercise repeated Command-F and scroll restoration with 100 goals and 10,000 tasks.
+- The locally packaged development app passed strict, deep signature verification after extraction. It contains an arm64 executable and no XCTest framework. The archive is `build/v1.2.0/unified-tasks/Disciplina-arm64-development.zip`, with SHA-256 `3a3d63f60134b0fa78fabca378b70706e4b2df14fc6d063d8380c02769fb6b81`. Its adjacent BUILD-INFO.txt records the source and installation steps.
+
+The device checks and search-latency target below remain open. On November 4 the local UI runner timed out before enabling automation. The four local results above are from the successful November 11 run.
+
+## v1.2.0 verification — November 2–3, 2026
+
+- PR #3 was rechecked and merged with a merge commit (`7116764307a9e0443810ef64e9c4f30f41a34aca`). Application/test source for Today: `29a86e8363b0940fe70084ea99e4f87cce940f1b`; implementation is in PR #4.
+- **79 local domain tests and 93 local Xcode unit/persistence tests passed.** New coverage includes atomic creation/planning, ordering/removal, idempotence, completion/reopening, deletion Undo, running-timer preservation, failed saves and post-commit refresh recovery, DST/time-zone day changes, restart, late/idempotent recurrence materialization, malformed planning metadata, JSON 1–6 compatibility and 10,000-task projection.
+- V1–V6 staged migration regressions passed. The V6 fixture preserves task appearance, measured allocations, session identity/duration, goal attribution and recurrence; failed publication retains the old manifest. Planning save rollback, disk reopening and whole-store restore equality also passed. The packaged Release binary independently migrated a fresh disposable private V5 snapshot: **19 tasks, 18 sessions**, schema 7 activated, original generation and backup retained. Live data was not replaced; no personal records were uploaded or committed.
+- **Four focused local UI tests passed** using an optimized test build: Today create/complete/reopen/remove/re-add/delete/Undo; existing-task search and Command-F return with details preserved; ordering plus compact details; and the 100-goal/10,000-task search/navigation scenario. Captured compact dark (local) and light (CI) appearances were inspected: list/actions/details remain readable, selected-row controls contrast, and the sidebar collapses without squeezing content.
+- Search profiling on **Apple M4, macOS 26.6.2 (25G83), Xcode 27.1 (27A9275)** used an optimized Release test build with explicit SEARCH_PROFILING instrumentation. Eight input-to-result-draw-pass samples: **139.25 ms median, 184.40 ms p95 and maximum** (nearest-rank p95). This small sample is not physical-screen latency and does **not** establish a consistent <=150 ms result. Query trimming now happens once per projection; the local domain benchmark averaged **14.92 ms** across 20 projections of 10,000 tasks. List/presentation costs remain; no speculative delay/debounce was added. Shipping Release excludes profiling and fixture seeding.
+- CI [run 41502213903](https://github.com/danyloplaksyvy/Disciplina-MacOS/actions/runs/41502213903) passed: **93 unit/persistence tests and 32 UI tests in each appearance, zero failures**. The dark job initially cancelled before executing steps; its successful rerun completed November 3 on the same source. An earlier source run exposed an ambiguous Activity “Today” test query after adding the Today sidebar destination. A dedicated Activity period-control identifier fixes that ambiguity. The full suites cover Today plus existing Activity, goals, search, timer, capture, login, popover and session-editing workflows.
+- Clean development archive: `build/v1.2.0/final/Disciplina-arm64-development.zip`, **1.2.0/build 8**, arm64, ad-hoc signed, strict deep signature verification passed, no XCTest framework. Source/checksum also appear in adjacent `BUILD-INFO.txt`. SHA-256: `030bd9d2e9e3d8c4fd27fedb258274bc7b38ad4f85a167ad27ce0189809ff733`.
+
+### Remaining v1.2.0 acceptance checks
+
+- [ ] Consistent <=150 ms visible search results; optimized measurements still exceed the target.
+- [ ] Real login, macOS 14 runtime/migration, secondary monitors, other Spaces and full-screen device matrix.
+- [ ] Physical sleep/wake and native capture focus/latency on the installed app.
+- [ ] VoiceOver, increased contrast, Reduce Motion, larger text and inactive-window selection device checks.
+- [ ] Installed-app native file-dialog export/restore using disposable data and full minimum/default/maximized layout matrix.
+
+Version **1.2.0**, build **8** remains a development build pending device acceptance. Schema V7/JSON 6 are forward upgrades; preserved original generations/backups remain available for recovery.
 
 ## v1.1.2 verification — October 29, 2026
 

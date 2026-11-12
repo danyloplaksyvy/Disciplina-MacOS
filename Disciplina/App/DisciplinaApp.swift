@@ -4,6 +4,7 @@ import SwiftUI
 struct DisciplinaApp: App {
     @NSApplicationDelegateAdaptor(AppCoordinator.self) private var coordinator
     @State private var dependencies = AppDependencies()
+    @State private var commandState = WindowCommandState()
     @Environment(\.openSettings) private var openSettings
 
     var body: some Scene {
@@ -24,10 +25,9 @@ struct DisciplinaApp: App {
             }
             CommandGroup(after: .textEditing) {
                 Button("Find Tasks") {
-                    guard NSApp.keyWindow?.identifier?.rawValue == "main" else { return }
-                    NotificationCenter.default.post(name: .focusTaskSearch, object: nil)
+                    (NSApp.keyWindow as? TaskWindow)?.findTasks()
                 }.keyboardShortcut("f")
-                    .disabled(NSApp.keyWindow?.identifier?.rawValue != "main")
+                    .disabled(!commandState.canFindTasks)
             }
             CommandGroup(replacing: .newItem) {
                 Button("New Task") {

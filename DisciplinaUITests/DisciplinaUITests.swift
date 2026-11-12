@@ -9,10 +9,133 @@ final class DisciplinaUITests: XCTestCase {
         app = XCUIApplication()
         app.launchArguments = ["--ui-testing"]
         app.launch()
+        XCTAssertTrue(app.outlines["today-task-list"].waitForExistence(timeout: 10))
+        XCTAssertFalse(app.buttons["navigate-today"].exists)
+        app.radioButtons["All tasks"].click()
         XCTAssertTrue(app.textFields["new-task"].waitForExistence(timeout: 10))
     }
 
     override func tearDownWithError() throws { app.terminate() }
+
+    func testTodayCreationCompletionRemovalAndUndo() {
+        selectTaskScope("Today")
+        let list = app.outlines["today-task-list"]
+        add("Plan work")
+        XCTAssertTrue(list.staticTexts["Plan work"].exists)
+        list.buttons["Complete Plan work"].click()
+        XCTAssertTrue(app.buttons["Expand planned completed"].waitForExistence(timeout: 5))
+        app.buttons["Expand planned completed"].click()
+        list.buttons["Reopen Plan work"].click()
+        list.staticTexts["Plan work"].click()
+        clickDetailButton("Remove from plan")
+        XCTAssertFalse(list.staticTexts["Plan work"].exists)
+        XCTAssertTrue(app.scrollViews["task-details"].staticTexts["Plan work"].exists)
+        clickDetailButton("Add to Today")
+        XCTAssertTrue(list.staticTexts["Plan work"].waitForExistence(timeout: 5))
+        app.buttons["Close details"].click()
+        list.staticTexts["Plan work"].rightClick()
+        app.windows["main"].menuItems["Delete"].click()
+        XCTAssertFalse(list.staticTexts["Plan work"].exists)
+        app.buttons["Undo"].firstMatch.click()
+        XCTAssertTrue(list.staticTexts["Plan work"].waitForExistence(timeout: 5))
+    }
+
+    func testCommandFFromTodayPreservesDetails() {
+        add("Existing work")
+        selectTaskScope("Today")
+        XCTAssertFalse(app.outlines["today-task-list"].staticTexts["Existing work"].exists)
+        app.buttons["Add existing task…"].click()
+        let sheet = app.sheets.firstMatch
+        sheet.searchFields["task-search"].typeText("existing")
+        sheet.buttons["Add Existing work to Today"].click()
+        let list = app.outlines["today-task-list"]
+        XCTAssertTrue(list.staticTexts["Existing work"].waitForExistence(timeout: 5))
+        list.staticTexts["Existing work"].click()
+        app.typeKey("f", modifierFlags: .command)
+        XCTAssertEqual(app.radioButtons["All tasks"].value.map { String(describing: $0) }, "1")
+        XCTAssertTrue(app.outlines["main-task-list"].waitForExistence(timeout: 5))
+        taskSearch.typeText("Existing")
+        selectTaskScope("Today")
+        XCTAssertTrue(app.scrollViews["task-details"].staticTexts["Existing work"].exists)
+        XCTAssertTrue(list.staticTexts["Existing work"].exists)
+        for _ in 0..<3 {
+            app.typeKey("f", modifierFlags: .command)
+            taskSearch.typeKey("a", modifierFlags: .command)
+            taskSearch.typeText("Existing")
+            XCTAssertEqual(taskSearch.value as? String, "Existing")
+            selectTaskScope("Today")
+            XCTAssertTrue(app.scrollViews["task-details"].staticTexts["Existing work"].exists)
+        }
+    }
+
+    func testTodayReorderingAndCompactDetails() {
+        selectTaskScope("Today")
+        add("First plan"); add("Second plan")
+        let list = app.outlines["today-task-list"]
+        XCTAssertLessThan(list.staticTexts["First plan"].frame.minY, list.staticTexts["Second plan"].frame.minY)
+        list.staticTexts["Second plan"].rightClick()
+        app.windows["main"].menuItems["Move Up"].click()
+        XCTAssertLessThan(list.staticTexts["Second plan"].frame.minY, list.staticTexts["First plan"].frame.minY)
+        let window = app.windows["main"]
+        let corner = window.coordinate(withNormalizedOffset: CGVector(dx: 1, dy: 1)).withOffset(CGVector(dx: -2, dy: -2))
+        corner.press(forDuration: 0.1, thenDragTo: corner.withOffset(CGVector(dx: 780 - window.frame.width, dy: -80)))
+        XCTAssertTrue(app.menuButtons["compact-navigation"].waitForExistence(timeout: 5))
+        list.staticTexts["First plan"].click()
+        XCTAssertGreaterThanOrEqual(list.frame.width, 360)
+        XCTAssertGreaterThanOrEqual(app.scrollViews["task-details"].frame.width, 300)
+        let attachment = XCTAttachment(screenshot: window.screenshot())
+        attachment.name = "today-compact-details"; attachment.lifetime = .keepAlways; add(attachment)
+    }
+
+    private func selectTaskScope(_ title: String) {
+        let control = app.radioButtons[title]
+        XCTAssertTrue(control.waitForExistence(timeout: 5))
+        control.click()
+    }
+
+    func testTaskScopesPreserveCreationDraftDetailsAndQueries() {
+        add("Unplanned work")
+        app.outlines["main-task-list"].staticTexts["Unplanned work"].click()
+        let field = app.textFields["new-task"]
+        field.click(); field.typeText("Draft for today")
+        taskSearch.click(); taskSearch.typeText("Unplanned")
+        selectTaskScope("Today")
+        XCTAssertEqual(field.value as? String, "Draft for today")
+        XCTAssertEqual(taskSearch.value as? String, "")
+        XCTAssertTrue(app.scrollViews["task-details"].staticTexts["Unplanned work"].exists)
+        XCTAssertTrue(app.staticTexts["filtered-details-notice"].exists)
+        field.click(); field.typeKey(.return, modifierFlags: [])
+        XCTAssertTrue(app.outlines["today-task-list"].staticTexts["Draft for today"].waitForExistence(timeout: 5))
+        selectTaskScope("All tasks")
+        XCTAssertEqual(taskSearch.value as? String, "Unplanned")
+        XCTAssertTrue(app.scrollViews["task-details"].staticTexts["Unplanned work"].exists)
+        app.typeKey("f", modifierFlags: .command)
+        taskSearch.typeKey(.escape, modifierFlags: [])
+        XCTAssertTrue(app.outlines["main-task-list"].staticTexts["Draft for today"].waitForExistence(timeout: 5))
+    }
+
+    func testTodayFiltersPreventPartialReorderingAndPreserveRenameDraft() {
+        selectTaskScope("Today")
+        add("Plan Alpha"); add("Plan Beta")
+        let list = app.outlines["today-task-list"]
+        list.staticTexts["Plan Alpha"].rightClick()
+        app.windows["main"].menuItems["Edit title"].click()
+        let editor = app.textFields["edit-task"]
+        editor.typeKey("a", modifierFlags: .command); editor.typeText("Uncommitted title")
+        selectTaskScope("All tasks")
+        XCTAssertEqual(app.textFields["edit-task"].value as? String, "Uncommitted title")
+        selectTaskScope("Today")
+        XCTAssertEqual(app.textFields["edit-task"].value as? String, "Uncommitted title")
+        app.buttons["Cancel"].firstMatch.click()
+        taskSearch.click(); taskSearch.typeText("Beta")
+        list.staticTexts["Plan Beta"].rightClick()
+        XCTAssertFalse(app.windows["main"].menuItems["Move Up"].exists)
+        app.typeKey(.escape, modifierFlags: [])
+        app.buttons["Clear filters"].click()
+        list.staticTexts["Plan Beta"].rightClick()
+        XCTAssertTrue(app.windows["main"].menuItems["Move Up"].exists)
+        app.typeKey(.escape, modifierFlags: [])
+    }
 
     private func add(_ title: String) {
         let field = app.textFields["new-task"]
@@ -161,6 +284,7 @@ final class DisciplinaUITests: XCTestCase {
         app.launchArguments = ["--ui-testing", "--seed-goals-performance"]
         app.launch()
         XCTAssertTrue(app.textFields["new-task"].firstMatch.waitForExistence(timeout: 60))
+        selectTaskScope("All tasks")
         openGoals()
         let goal = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Open goal Performance Goal")).firstMatch
         XCTAssertTrue(goal.waitForExistence(timeout: 5)); goal.click()
@@ -180,6 +304,18 @@ final class DisciplinaUITests: XCTestCase {
         taskSearch.typeText("Work 42-")
         XCTAssertTrue(app.staticTexts["100 of 10000 tasks · Local storage"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.outlines["main-task-list"].staticTexts["Work 42-0"].exists)
+        let list = app.outlines["main-task-list"]
+        // Scroll position is exposed by the native scroll bar; no off-screen row lookup.
+        let scrollView = app.scrollViews.containing(.outline, identifier: "main-task-list").firstMatch
+        list.scroll(byDeltaX: 0, deltaY: -500)
+        let scrollBar = scrollView.scrollBars.firstMatch
+        XCTAssertTrue(scrollBar.waitForExistence(timeout: 5))
+        let position = scrollBar.value.map { String(describing: $0) }
+        XCTAssertNotNil(position)
+        selectTaskScope("Today"); selectTaskScope("All tasks")
+        XCTAssertEqual(taskSearch.value as? String, "Work 42-")
+        XCTAssertEqual(scrollBar.value.map { String(describing: $0) }, position)
+
     }
 
     private var taskSearch: XCUIElement { app.searchFields["task-search"].firstMatch }
@@ -281,7 +417,7 @@ final class DisciplinaUITests: XCTestCase {
         } else {
             app.menuButtons["compact-navigation"].click(); app.menuItems["Activity"].click()
         }
-        XCTAssertTrue(app.buttons["Today"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["activity-current-period"].waitForExistence(timeout: 5))
     }
 
     func testActivityCalendarWeeklyReviewAndFullRowNavigation() {
@@ -296,7 +432,7 @@ final class DisciplinaUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Manual or corrected"].waitForExistence(timeout: 5))
         let taskLink = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "activity-task-")).firstMatch
         XCTAssertTrue(taskLink.exists)
-        app.buttons["Next month"].click(); app.buttons["Today"].click()
+        app.buttons["Next month"].click(); app.buttons["activity-current-period"].click()
         let activityPane = app.scrollViews.containing(.button, identifier: taskLink.identifier).firstMatch
         for _ in 0..<12 {
             if taskLink.isHittable { break }
@@ -333,7 +469,7 @@ final class DisciplinaUITests: XCTestCase {
         list.staticTexts["Recover from popover"].rightClick()
         app.windows["main"].menuItems["Delete"].click()
         app.statusItems.firstMatch.click()
-        let popover = app.popovers.firstMatch
+        let popover = app.dialogs["status-panel"]
         XCTAssertTrue(popover.buttons["Undo"].waitForExistence(timeout: 5))
         popover.buttons["Undo"].click()
         XCTAssertTrue(popover.staticTexts["Recover from popover"].waitForExistence(timeout: 5))
@@ -499,12 +635,19 @@ final class DisciplinaUITests: XCTestCase {
         app.terminate()
         app.launchArguments = ["--ui-testing", "--enable-test-shortcut"]
         app.launch()
+        XCTAssertTrue(app.outlines["today-task-list"].waitForExistence(timeout: 10))
+        XCTAssertFalse(app.buttons["navigate-today"].exists)
+        selectTaskScope("All tasks")
         XCTAssertTrue(app.textFields["new-task"].waitForExistence(timeout: 10))
         let finder = XCUIApplication(bundleIdentifier: "com.apple.finder")
         finder.activate()
+        app.statusItems.firstMatch.click()
+        let statusPanel = app.dialogs["status-panel"]
+        XCTAssertTrue(statusPanel.buttons["Open Disciplina"].waitForExistence(timeout: 3))
         finder.typeKey(" ", modifierFlags: [.control, .option])
         let capture = app.textFields["capture-task"]
         XCTAssertTrue(capture.waitForExistence(timeout: 5))
+        XCTAssertFalse(statusPanel.exists)
         app.typeText("From Finder")
         app.typeKey(" ", modifierFlags: [.control, .option])
         XCTAssertEqual(capture.value as? String, "From Finder")
@@ -563,6 +706,10 @@ final class DisciplinaUITests: XCTestCase {
         let list = app.descendants(matching: .any)["popover-task-list"].firstMatch
         XCTAssertTrue(list.waitForExistence(timeout: 3))
         XCTAssertTrue(list.staticTexts["Shared task"].exists)
+        app.windows["main"].textFields["new-task"].click()
+        XCTAssertFalse(list.exists)
+        statusItem.click()
+        XCTAssertTrue(list.waitForExistence(timeout: 3))
         list.buttons["Complete Shared task"].click()
         app.buttons["Open Disciplina"].click()
         XCTAssertTrue(app.buttons["Reopen Shared task"].waitForExistence(timeout: 3))
@@ -661,4 +808,133 @@ final class DisciplinaUITests: XCTestCase {
         app.menuItems["Exit Full Screen"].click()
     }
 
+}
+
+extension DisciplinaUITests {
+    /// Drive screen coordinates through TextEdit. Sending events to Disciplina
+    /// can activate its main window and mask a Space transition.
+    func testStatusItemOverFullScreenTextEdit() throws {
+        let id = UUID().uuidString
+        let status = app.statusItems.firstMatch
+        XCTAssertTrue(status.waitForExistence(timeout: 8))
+        let fixture = FileManager.default.temporaryDirectory.appendingPathComponent("Disciplina-\(id).txt")
+        try "Full-screen fixture".write(to: fixture, atomically: true, encoding: .utf8)
+        addTeardownBlock { try? FileManager.default.removeItem(at: fixture) }
+        let open = Process()
+        open.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+        open.arguments = ["-a", "TextEdit", fixture.path]
+        try open.run()
+        open.waitUntilExit()
+        XCTAssertEqual(open.terminationStatus, 0)
+        let textEdit = XCUIApplication(bundleIdentifier: "com.apple.TextEdit")
+        let window = textEdit.windows.containing(NSPredicate(format: "title CONTAINS %@", id)).firstMatch
+        XCTAssertTrue(window.waitForExistence(timeout: 8))
+        addTeardownBlock { @MainActor in
+            if window.exists {
+                // Full screen can hide the traffic lights. Target this fixture
+                // explicitly before closing it, including on a failed assertion.
+                window.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).click()
+                window.typeKey("w", modifierFlags: .command)
+                let discard = window.sheets.buttons["Don't Save"]
+                if discard.exists { discard.click() }
+            }
+        }
+        textEdit.menuBars.menuBarItems["View"].click()
+        let enter = textEdit.menuItems["Enter Full Screen"]
+        if enter.exists { enter.click() } else { textEdit.typeKey(.escape, modifierFlags: []) }
+        var displayID = CGDirectDisplayID()
+        var displayCount: UInt32 = 0
+        XCTAssertEqual(CGGetDisplaysWithPoint(window.frame.centerPoint, 1, &displayID, &displayCount), .success)
+        XCTAssertEqual(displayCount, 1)
+        let display = CGDisplayBounds(displayID)
+        let editorPID = try XCTUnwrap(NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.TextEdit").first?.processIdentifier)
+        func fullScreenWindowNumber() -> Int? {
+            let entries = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? []
+            return entries.first { entry in
+                guard entry[kCGWindowOwnerPID as String] as? Int32 == editorPID,
+                      entry[kCGWindowLayer as String] as? Int == 0,
+                      let dictionary = entry[kCGWindowBounds as String] as? [String: Any],
+                      let bounds = CGRect(dictionaryRepresentation: dictionary as CFDictionary) else { return false }
+                return abs(bounds.height - display.height) < 80 && abs(bounds.width - display.width) < 3 && abs(bounds.minX - display.minX) < 3
+            }?[kCGWindowNumber as String] as? Int
+        }
+        func waitUntil(_ condition: @escaping () -> Bool) -> Bool {
+            XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in condition() }, object: nil)], timeout: 8) == .completed
+        }
+        XCTAssertTrue(waitUntil { fullScreenWindowNumber() != nil })
+        let externalID = try XCTUnwrap(fullScreenWindowNumber())
+        func clickStatus() {
+            let top = window.coordinate(withNormalizedOffset: .zero)
+            let reveal = top.withOffset(CGVector(dx: display.minX + display.width * 0.75 - window.frame.minX,
+                                                 dy: display.minY + 1 - window.frame.minY))
+            reveal.hover()
+            // System UI animates independently of the task application's AX tree.
+            RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.8))
+            XCTAssertTrue(waitUntil { display.contains(status.frame.centerPoint) && status.frame.height > 0 })
+            let point = status.frame.centerPoint
+            print("Status click at \(point), menu-bar frame \(status.frame)")
+            top.withOffset(CGVector(dx: point.x - window.frame.minX, dy: point.y - window.frame.minY)).click()
+        }
+        let panel = app.dialogs["status-panel"]
+        let openButton = panel.buttons["Open Disciplina"]
+        clickStatus()
+        XCTAssertTrue(openButton.waitForExistence(timeout: 5))
+        XCTAssertEqual(fullScreenWindowNumber(), externalID)
+        let title = "Screen work " + id.prefix(6)
+        XCTAssertEqual(NSWorkspace.shared.frontmostApplication?.processIdentifier, editorPID)
+        let panelRect = panel.frame
+        XCTAssertTrue(display.contains(panelRect))
+        let ordered = try XCTUnwrap(CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements],
+                                                                kCGNullWindowID) as? [[String: Any]])
+        let editorIndex = try XCTUnwrap(ordered.firstIndex { $0[kCGWindowNumber as String] as? Int == externalID })
+        let appPIDs = NSRunningApplication.runningApplications(withBundleIdentifier: "com.danyloplaksyvy.Disciplina").map(\.processIdentifier)
+        XCTAssertTrue(ordered.prefix(editorIndex).contains { entry in
+            guard let pid = entry[kCGWindowOwnerPID as String] as? Int32, appPIDs.contains(pid),
+                  let dictionary = entry[kCGWindowBounds as String] as? [String: Any],
+                  let bounds = CGRect(dictionaryRepresentation: dictionary as CFDictionary) else { return false }
+            return bounds.insetBy(dx: -2, dy: -2).contains(panelRect) && abs(bounds.width - panelRect.width) < 4
+        }, "The status panel must be onscreen in front of TextEdit.")
+        XCTAssertGreaterThanOrEqual(panel.frame.minY, status.frame.maxY - 2)
+        // A nonactivating panel receives keys while TextEdit remains frontmost.
+        // Verify the field already owns keyboard focus before injecting any keys.
+        let input = panel.textFields["new-task"]
+        XCTAssertTrue(waitUntil { input.debugDescription.components(separatedBy: "\n").first?.contains("Keyboard Focused") == true })
+        try sendSystemKeys(id)
+        XCTAssertEqual(NSWorkspace.shared.frontmostApplication?.processIdentifier, editorPID)
+        let rows = app.descendants(matching: .any)["popover-task-list"].firstMatch.staticTexts.matching(identifier: title)
+        XCTAssertTrue(rows.firstMatch.waitForExistence(timeout: 5))
+        XCTAssertEqual(rows.count, 1)
+        XCTAssertEqual(fullScreenWindowNumber(), externalID)
+        let screenshot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        screenshot.name = "status-over-full-screen-TextEdit"; screenshot.lifetime = .keepAlways; add(screenshot)
+        try sendSystemKeys("escape")
+        XCTAssertTrue(waitUntil { !openButton.exists })
+        clickStatus()
+        XCTAssertTrue(openButton.waitForExistence(timeout: 5))
+        XCTAssertEqual(fullScreenWindowNumber(), externalID)
+        clickStatus()
+        XCTAssertTrue(waitUntil { !openButton.exists })
+    }
+
+    /// The test host posts untargeted keys while the foreground process is TextEdit.
+    private func sendSystemKeys(_ request: String) throws {
+        let path = try XCTUnwrap(ProcessInfo.processInfo.environment["DISCIPLINA_UI_KEY_DIR"],
+                                 "Run this suite with scripts/with-full-screen-test-keys.sh.")
+        let directory = URL(fileURLWithPath: path)
+        let response = directory.appendingPathComponent("response")
+        // Each participant writes only inside its own temporary directory.
+        let outgoing = FileManager.default.temporaryDirectory.appendingPathComponent("status-keys-" + directory.lastPathComponent)
+        defer { try? FileManager.default.removeItem(at: outgoing) }
+        try request.write(to: outgoing, atomically: true, encoding: .utf8)
+        let replied = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            (try? String(contentsOf: response, encoding: .utf8))?.hasPrefix(request + " ") == true
+        }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [replied], timeout: 8), .completed)
+        XCTAssertEqual(try String(contentsOf: response, encoding: .utf8), request + " ok")
+    }
+
+}
+
+private extension CGRect {
+    var centerPoint: CGPoint { CGPoint(x: midX, y: midY) }
 }
