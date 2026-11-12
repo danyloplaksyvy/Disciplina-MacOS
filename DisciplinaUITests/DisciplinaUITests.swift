@@ -919,13 +919,15 @@ extension DisciplinaUITests {
                                  "Run this suite with scripts/with-full-screen-test-keys.sh.")
         let directory = URL(fileURLWithPath: path)
         let response = directory.appendingPathComponent("response")
-        if FileManager.default.fileExists(atPath: response.path) { try FileManager.default.removeItem(at: response) }
-        try request.write(to: directory.appendingPathComponent("request"), atomically: true, encoding: .utf8)
+        // Each participant writes only inside its own temporary directory.
+        let outgoing = FileManager.default.temporaryDirectory.appendingPathComponent("status-keys-" + directory.lastPathComponent)
+        defer { try? FileManager.default.removeItem(at: outgoing) }
+        try request.write(to: outgoing, atomically: true, encoding: .utf8)
         let replied = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
-            FileManager.default.fileExists(atPath: response.path)
+            (try? String(contentsOf: response, encoding: .utf8))?.hasPrefix(request + " ") == true
         }, object: nil)
         XCTAssertEqual(XCTWaiter.wait(for: [replied], timeout: 8), .completed)
-        XCTAssertEqual(try String(contentsOf: response, encoding: .utf8), "ok")
+        XCTAssertEqual(try String(contentsOf: response, encoding: .utf8), request + " ok")
     }
 
 }

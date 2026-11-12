@@ -3,7 +3,9 @@ import AppKit
 // Test companion for a real keyboard-focus check across two applications.
 // The host must already be authorized to post events. Never request access.
 let directory = URL(fileURLWithPath: CommandLine.arguments[1], isDirectory: true)
-let request = directory.appendingPathComponent("request")
+let runnerTemp = FileManager.default.homeDirectoryForCurrentUser
+    .appendingPathComponent("Library/Containers/com.danyloplaksyvy.DisciplinaUITests.xctrunner/Data/tmp")
+let request = runnerTemp.appendingPathComponent("status-keys-" + directory.lastPathComponent)
 let response = directory.appendingPathComponent("response")
 let ready = directory.appendingPathComponent("ready")
 guard CGPreflightPostEventAccess() else {
@@ -23,10 +25,11 @@ func key(_ code: CGKeyCode, unicode: String? = nil) {
 }
 
 try Data().write(to: ready)
+var processed: String?
 while true {
     RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.05))
-    guard let action = try? String(contentsOf: request, encoding: .utf8) else { continue }
-    try FileManager.default.removeItem(at: request)
+    guard let action = try? String(contentsOf: request, encoding: .utf8), action != processed else { continue }
+    processed = action
     var result = "ok"
     if NSWorkspace.shared.frontmostApplication?.bundleIdentifier != "com.apple.TextEdit" {
         result = "TextEdit is no longer frontmost."
@@ -40,5 +43,5 @@ while true {
     } else {
         result = "Unknown fixture request."
     }
-    try result.write(to: response, atomically: true, encoding: .utf8)
+    try (action + " " + result).write(to: response, atomically: true, encoding: .utf8)
 }
