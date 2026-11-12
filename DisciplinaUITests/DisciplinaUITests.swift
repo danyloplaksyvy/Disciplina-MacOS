@@ -831,7 +831,10 @@ extension DisciplinaUITests {
         XCTAssertTrue(window.waitForExistence(timeout: 8))
         addTeardownBlock { @MainActor in
             if window.exists {
-                window.buttons[XCUIIdentifierCloseWindow].click()
+                // Full screen can hide the traffic lights. Target this fixture
+                // explicitly before closing it, including on a failed assertion.
+                window.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).click()
+                window.typeKey("w", modifierFlags: .command)
                 let discard = window.sheets.buttons["Don't Save"]
                 if discard.exists { discard.click() }
             }
