@@ -896,7 +896,7 @@ extension DisciplinaUITests {
         // Verify the field already owns keyboard focus before injecting any keys.
         let input = panel.textFields["new-task"]
         XCTAssertTrue(waitUntil { input.debugDescription.components(separatedBy: "\n").first?.contains("Keyboard Focused") == true })
-        try sendSystemKeys(title)
+        try sendSystemKeys(id)
         XCTAssertEqual(NSWorkspace.shared.frontmostApplication?.processIdentifier, editorPID)
         let rows = app.descendants(matching: .any)["popover-task-list"].firstMatch.staticTexts.matching(identifier: title)
         XCTAssertTrue(rows.firstMatch.waitForExistence(timeout: 5))
@@ -904,7 +904,7 @@ extension DisciplinaUITests {
         XCTAssertEqual(fullScreenWindowNumber(), externalID)
         let screenshot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
         screenshot.name = "status-over-full-screen-TextEdit"; screenshot.lifetime = .keepAlways; add(screenshot)
-        try sendSystemKeys(nil)
+        try sendSystemKeys("escape")
         XCTAssertTrue(waitUntil { !openButton.exists })
         clickStatus()
         XCTAssertTrue(openButton.waitForExistence(timeout: 5))
@@ -913,29 +913,19 @@ extension DisciplinaUITests {
         XCTAssertTrue(waitUntil { !openButton.exists })
     }
 
-    /// System Events sends keys to the actual keyboard owner. XCTest's
-    /// application-targeted input can activate even an already focused panel.
-    private func sendSystemKeys(_ title: String?) throws {
-        let script = """
-        on run argv
-            with timeout of 10 seconds
-                tell application "System Events"
-                    if (count of argv) is 0 then
-                        key code 53
-                    else
-                        keystroke (item 1 of argv)
-                        key code 36
-                    end if
-                end tell
-            end timeout
-        end run
-        """
-        let command = Process()
-        command.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
-        command.arguments = ["-e", script] + (title.map { [$0] } ?? [])
-        try command.run()
-        command.waitUntilExit()
-        XCTAssertEqual(command.terminationStatus, 0, "System Events must be able to send keyboard input on the test machine.")
+    /// The test host posts untargeted keys while the foreground process is TextEdit.
+    private func sendSystemKeys(_ request: String) throws {
+        let path = try XCTUnwrap(ProcessInfo.processInfo.environment["DISCIPLINA_UI_KEY_DIR"],
+                                 "Run this suite with scripts/with-full-screen-test-keys.sh.")
+        let directory = URL(fileURLWithPath: path)
+        let response = directory.appendingPathComponent("response")
+        if FileManager.default.fileExists(atPath: response.path) { try FileManager.default.removeItem(at: response) }
+        try request.write(to: directory.appendingPathComponent("request"), atomically: true, encoding: .utf8)
+        let replied = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            FileManager.default.fileExists(atPath: response.path)
+        }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [replied], timeout: 8), .completed)
+        XCTAssertEqual(try String(contentsOf: response, encoding: .utf8), "ok")
     }
 
 }

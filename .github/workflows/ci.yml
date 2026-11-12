@@ -77,7 +77,7 @@ jobs:
       - name: Search, scrolling and full-screen status checks
         run: |
           set -o pipefail
-          xcodebuild test -project Disciplina.xcodeproj -scheme Disciplina -destination 'platform=macOS,arch=arm64' -derivedDataPath DerivedData -only-testing:DisciplinaUITests/DisciplinaUITests/testCommandFFromTodayPreservesDetails -only-testing:DisciplinaUITests/DisciplinaUITests/testHundredGoalsWithHundredTasksRemainNavigable -only-testing:DisciplinaUITests/DisciplinaUITests/testStatusItemOverFullScreenTextEdit -resultBundlePath scope-tests.xcresult CODE_SIGN_IDENTITY=- ARCHS=arm64 | tee scope-tests.log
+          scripts/with-full-screen-test-keys.sh xcodebuild test -project Disciplina.xcodeproj -scheme Disciplina -destination 'platform=macOS,arch=arm64' -derivedDataPath DerivedData -only-testing:DisciplinaUITests/DisciplinaUITests/testCommandFFromTodayPreservesDetails -only-testing:DisciplinaUITests/DisciplinaUITests/testHundredGoalsWithHundredTasksRemainNavigable -only-testing:DisciplinaUITests/DisciplinaUITests/testStatusItemOverFullScreenTextEdit -resultBundlePath scope-tests.xcresult CODE_SIGN_IDENTITY=- ARCHS=arm64 | tee scope-tests.log
       - name: Remaining UI acceptance tests
         run: |
           set -o pipefail
