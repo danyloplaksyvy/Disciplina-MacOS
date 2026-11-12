@@ -896,7 +896,7 @@ extension DisciplinaUITests {
         // Verify the field already owns keyboard focus before injecting any keys.
         let input = panel.textFields["new-task"]
         XCTAssertTrue(waitUntil { input.debugDescription.components(separatedBy: "\n").first?.contains("Keyboard Focused") == true })
-        input.typeText(title + "\n")
+        try sendSystemKeys(title)
         XCTAssertEqual(NSWorkspace.shared.frontmostApplication?.processIdentifier, editorPID)
         let rows = app.descendants(matching: .any)["popover-task-list"].firstMatch.staticTexts.matching(identifier: title)
         XCTAssertTrue(rows.firstMatch.waitForExistence(timeout: 5))
@@ -904,7 +904,7 @@ extension DisciplinaUITests {
         XCTAssertEqual(fullScreenWindowNumber(), externalID)
         let screenshot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
         screenshot.name = "status-over-full-screen-TextEdit"; screenshot.lifetime = .keepAlways; add(screenshot)
-        input.typeKey(.escape, modifierFlags: [])
+        try sendSystemKeys(nil)
         XCTAssertTrue(waitUntil { !openButton.exists })
         clickStatus()
         XCTAssertTrue(openButton.waitForExistence(timeout: 5))
@@ -912,6 +912,32 @@ extension DisciplinaUITests {
         clickStatus()
         XCTAssertTrue(waitUntil { !openButton.exists })
     }
+
+    /// System Events sends keys to the actual keyboard owner. XCTest's
+    /// application-targeted input can activate even an already focused panel.
+    private func sendSystemKeys(_ title: String?) throws {
+        let script = """
+        on run argv
+            with timeout of 10 seconds
+                tell application "System Events"
+                    if (count of argv) is 0 then
+                        key code 53
+                    else
+                        keystroke (item 1 of argv)
+                        key code 36
+                    end if
+                end tell
+            end timeout
+        end run
+        """
+        let command = Process()
+        command.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+        command.arguments = ["-e", script] + (title.map { [$0] } ?? [])
+        try command.run()
+        command.waitUntilExit()
+        XCTAssertEqual(command.terminationStatus, 0, "System Events must be able to send keyboard input on the test machine.")
+    }
+
 }
 
 private extension CGRect {
