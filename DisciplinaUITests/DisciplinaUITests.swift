@@ -469,7 +469,7 @@ final class DisciplinaUITests: XCTestCase {
         list.staticTexts["Recover from popover"].rightClick()
         app.windows["main"].menuItems["Delete"].click()
         app.statusItems.firstMatch.click()
-        let popover = app.windows["status-panel"]
+        let popover = app.dialogs["status-panel"]
         XCTAssertTrue(popover.buttons["Undo"].waitForExistence(timeout: 5))
         popover.buttons["Undo"].click()
         XCTAssertTrue(popover.staticTexts["Recover from popover"].waitForExistence(timeout: 5))
@@ -642,7 +642,7 @@ final class DisciplinaUITests: XCTestCase {
         let finder = XCUIApplication(bundleIdentifier: "com.apple.finder")
         finder.activate()
         app.statusItems.firstMatch.click()
-        let statusPanel = app.windows["status-panel"]
+        let statusPanel = app.dialogs["status-panel"]
         XCTAssertTrue(statusPanel.buttons["Open Disciplina"].waitForExistence(timeout: 3))
         finder.typeKey(" ", modifierFlags: [.control, .option])
         let capture = app.textFields["capture-task"]
@@ -872,7 +872,7 @@ extension DisciplinaUITests {
             print("Status click at \(point), menu-bar frame \(status.frame)")
             top.withOffset(CGVector(dx: point.x - window.frame.minX, dy: point.y - window.frame.minY)).click()
         }
-        let panel = app.windows["status-panel"]
+        let panel = app.dialogs["status-panel"]
         let openButton = panel.buttons["Open Disciplina"]
         clickStatus()
         XCTAssertTrue(openButton.waitForExistence(timeout: 5))
@@ -892,14 +892,19 @@ extension DisciplinaUITests {
             return bounds.insetBy(dx: -2, dy: -2).contains(panelRect) && abs(bounds.width - panelRect.width) < 4
         }, "The status panel must be onscreen in front of TextEdit.")
         XCTAssertGreaterThanOrEqual(panel.frame.minY, status.frame.maxY - 2)
-        textEdit.typeText(title + "\n")
+        // A nonactivating panel receives keys while TextEdit remains frontmost.
+        // Verify the field already owns keyboard focus before injecting any keys.
+        let input = panel.textFields["new-task"]
+        XCTAssertTrue(waitUntil { input.debugDescription.components(separatedBy: "\n").first?.contains("Keyboard Focused") == true })
+        input.typeText(title + "\n")
+        XCTAssertEqual(NSWorkspace.shared.frontmostApplication?.processIdentifier, editorPID)
         let rows = app.descendants(matching: .any)["popover-task-list"].firstMatch.staticTexts.matching(identifier: title)
         XCTAssertTrue(rows.firstMatch.waitForExistence(timeout: 5))
         XCTAssertEqual(rows.count, 1)
         XCTAssertEqual(fullScreenWindowNumber(), externalID)
         let screenshot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
         screenshot.name = "status-over-full-screen-TextEdit"; screenshot.lifetime = .keepAlways; add(screenshot)
-        textEdit.typeKey(.escape, modifierFlags: [])
+        input.typeKey(.escape, modifierFlags: [])
         XCTAssertTrue(waitUntil { !openButton.exists })
         clickStatus()
         XCTAssertTrue(openButton.waitForExistence(timeout: 5))
