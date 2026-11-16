@@ -72,7 +72,7 @@ final class AppDependencies {
                 let location = try StoreLocation(); self.location = location
                 persistence = try location.open()
             }
-            #if DEBUG
+            #if DEBUG || SEARCH_PROFILING
             if testing && ProcessInfo.processInfo.arguments.contains("--seed-goals-performance") {
                 var snapshot = TaskSnapshot()
                 let date = Date(timeIntervalSince1970: 1700000000)
@@ -146,7 +146,7 @@ final class AppDependencies {
     }
     func showMain() {
         if mainWindow == nil {
-            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1100, height: 700),
+            let window = TaskWindow(contentRect: NSRect(x: 0, y: 0, width: 1100, height: 700),
                                   styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
             window.title = "Disciplina"; window.identifier = NSUserInterfaceItemIdentifier("main")
             window.isReleasedWhenClosed = false

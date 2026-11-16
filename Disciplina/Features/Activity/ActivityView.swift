@@ -45,6 +45,7 @@ struct ActivityView: View {
                     Text(weekly ? "\(period.start.formatted(date: .abbreviated, time: .omitted)) – \(period.end.addingTimeInterval(-1).formatted(date: .abbreviated, time: .omitted))" : selectedDate.formatted(.dateTime.month(.wide).year())).font(.headline)
                     Button { movePeriod(1) } label: { Image(systemName: "chevron.right") }.accessibilityLabel(weekly ? "Next week" : "Next month")
                     Spacer(); Button(weekly ? "This Week" : "Today") { selection = LocalDay(Date(), calendar: calendar) }
+                        .accessibilityIdentifier("activity-current-period")
                 }
                 if weekly {
                     ScrollView { VStack(alignment: .leading, spacing: 16) { detail; weeklySummary } }.accessibilityIdentifier("weekly-review")

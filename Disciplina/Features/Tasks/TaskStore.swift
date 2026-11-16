@@ -9,6 +9,10 @@ final class TaskStore {
     let service: TaskService
     let timer: TimerCoordinator
     let goalService: GoalService
+    let planningService: PlanningService
+    private(set) var dailyPlan = DailyPlan()
+    var today: LocalDay { LocalDay(groupingDate, calendar: groupingCalendar) }
+    private var planStructure: [[UUID]] { [dailyPlan.today.map(\.id), dailyPlan.completed.map(\.id)] + dailyPlan.earlier.map { $0.tasks.map(\.id) } }
     private(set) var goals: [Goal] = []
     private(set) var milestones: [Milestone] = []
     private(set) var goalProgress = GoalProgressService()
@@ -118,6 +122,7 @@ final class TaskStore {
 
     init(service: TaskService, timer: TimerCoordinator? = nil, goalService: GoalService? = nil) {
         self.service = service
+        self.planningService = PlanningService(repository: service.repository)
         self.goalService = goalService ?? GoalService(repository: service.repository)
         self.timer = timer ?? TimerCoordinator(repository: service.repository)
         self.timer.onCommit = { [weak self] in self?.refresh() }
@@ -146,6 +151,18 @@ final class TaskStore {
     }
 
     @discardableResult func create(title: String, goalID: UUID? = nil) -> Bool { mutate { try service.create(title: title, goalID: goalID) } }
+    @discardableResult func createForToday(title: String) -> Bool {
+        mutate { try service.create(title: title, plannedDay: today) }
+    }
+    @discardableResult func planToday(_ id: UUID) -> Bool {
+        mutate { try planningService.assign(id, day: today) }
+    }
+    @discardableResult func removeFromPlan(_ id: UUID) -> Bool {
+        mutate { try planningService.assign(id, day: nil) }
+    }
+    @discardableResult func reorderToday(_ ids: [UUID]) -> Bool {
+        mutate { try planningService.reorder(day: today, ids: ids) }
+    }
     @discardableResult func rename(id: UUID, title: String) -> Bool { mutate { try service.rename(id: id, title: title) } }
     @discardableResult func setCompleted(id: UUID, isCompleted: Bool) -> Bool {
         mutate { try timer.setStatus(id: id, status: isCompleted ? .completed : .todo) }
@@ -246,6 +263,7 @@ final class TaskStore {
         if !unavailable { _ = mutate { try timer.reconcileRecurrence() } }
     }
     private func rebuildDays() {
+        dailyPlan = DailyPlan(tasks: items, day: today)
         dayGroups = TaskDayGroup.make(inProgress: inProgress, todo: todo, completed: completed,
                                      now: groupingDate, calendar: groupingCalendar)
     }
@@ -289,6 +307,7 @@ final class TaskStore {
     private func mutate(_ action: () throws -> Void) -> Bool {
         guard !unavailable else { return false }
         let previousStructure = structure
+        let previousPlan = planStructure
         let previousGoals = goalStructure
         do { try action() } catch {
             errorMessage = "Could not save the change. \(error.localizedDescription)"
@@ -298,7 +317,7 @@ final class TaskStore {
             let snapshot = try service.repository.snapshot()
             try snapshot.validate()
             publish(snapshot)
-            if structure != previousStructure || goalStructure != previousGoals { structureRevision += 1 }
+            if structure != previousStructure || goalStructure != previousGoals || planStructure != previousPlan { structureRevision += 1 }
             errorMessage = nil
         } catch {
             needsRefresh = true

@@ -136,6 +136,7 @@ extension TaskSnapshot {
                   let id = series[index].pendingTaskID else { continue }
             tasks.append(TodoItem(id: id, title: series[index].title, createdAt: now, updatedAt: now,
                                   completedAt: nil, seriesID: series[index].id, scheduledDay: day, goalID: series[index].futureGoalID, appearance: series[index].futureAppearance))
+            appendToPlan(id: id, day: today)
             series[index].currentTaskID = id
             series[index].pendingTaskID = nil; series[index].pendingDay = nil
             series[index].revision = makeID(); changed = true

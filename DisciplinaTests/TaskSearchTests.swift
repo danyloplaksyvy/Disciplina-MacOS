@@ -101,4 +101,31 @@ import Testing
         for _ in 0..<20 { _ = TaskQuery(text: "work 99").project(input) }
         print("SEARCH_BENCHMARK 10000 tasks, 20 projections: \(start.duration(to: .now))")
     }
+    @Test func plannedProjectionPreservesOrderAndExpandsMatchesWithoutMutatingPlan() {
+        let day = LocalDay(now), prior = LocalDay(now.addingTimeInterval(-86400)), goal = UUID()
+        var a = task("Café first", goal: goal); a.plannedDay = day; a.planOrder = 1
+        var b = task("Café second", goal: goal); b.plannedDay = day; b.planOrder = 0
+        var old = task("Café earlier", goal: goal); old.plannedDay = prior; old.planOrder = 0
+        var done = task("Café completed", status: .completed, goal: goal); done.plannedDay = day; done.planOrder = 2
+        let source = DailyPlan(tasks: [a, b, old, done, task("Unplanned")], day: day)
+        let result = PlannedTaskResults(plan: source, query: TaskQuery(text: "CAFE", goal: .goal(goal)))
+        #expect(result.plan.today.map(\.id) == [b.id, a.id])
+        #expect(result.countLabel == "4 of 4 tasks")
+        #expect(result.canReorderToday)
+        #expect(!PlannedTaskResults(plan: source, query: TaskQuery(text: "first")).canReorderToday)
+        #expect(result.visibleIDs(earlierExpanded: false, completedExpanded: false, searching: false) == [a.id, b.id])
+        #expect(result.visibleIDs(earlierExpanded: false, completedExpanded: false, searching: true) == [a.id, b.id, old.id, done.id])
+        #expect(PlannedTaskResults(plan: source, query: TaskQuery(status: .completed)).matchedIDs == [done.id])
+        #expect(source.today.map(\.id) == [b.id, a.id])
+    }
+    @Test func unavailablePlannedProjectionHidesStaleDataAndCounts() {
+        var value = task("Work"); value.plannedDay = LocalDay(now); value.planOrder = 0
+        let plan = DailyPlan(tasks: [value], day: LocalDay(now))
+        let result = PlannedTaskResults(plan: plan, unavailable: true)
+        #expect(result.matchedIDs.isEmpty)
+        #expect(!result.canReorderToday)
+        #expect(result.countLabel == "Task results unavailable")
+        #expect(PlannedTaskResults(plan: plan).matchedIDs == [value.id])
+    }
+
 }

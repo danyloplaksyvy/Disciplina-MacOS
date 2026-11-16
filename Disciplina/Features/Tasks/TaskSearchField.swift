@@ -25,7 +25,15 @@ struct TaskSearchField: NSViewRepresentable {
         if field.stringValue != text { field.stringValue = text }
         if field.focusToken != focusToken {
             field.focusToken = focusToken
-            if focusToken > 0 { field.requestFocus() }
+            if focusToken > 0 {
+                let requestedToken = focusToken
+                // Retained SwiftUI hosts may change their responder during this update.
+                // Apply an explicit search request after that update, not inside it.
+                DispatchQueue.main.async { [weak field] in
+                    guard let field, field.focusToken == requestedToken else { return }
+                    field.requestFocus()
+                }
+            }
         }
     }
     final class Field: NSSearchField {
@@ -33,17 +41,28 @@ struct TaskSearchField: NSViewRepresentable {
         private var wantsFocus = false
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
+            if let main = window as? TaskWindow { main.taskSearch = self }
             NotificationCenter.default.removeObserver(self, name: NSWindow.didBecomeKeyNotification, object: nil)
             if let window {
                 NotificationCenter.default.addObserver(self, selector: #selector(becameKey), name: NSWindow.didBecomeKeyNotification, object: window)
             }
             applyFocus()
         }
+        override func viewDidUnhide() {
+            super.viewDidUnhide()
+            applyFocus()
+        }
         @objc private func becameKey(_ notification: Notification) { applyFocus() }
         func requestFocus() { wantsFocus = true; applyFocus() }
         private func applyFocus() {
             guard wantsFocus, !isHiddenOrHasHiddenAncestor, let window, window.isKeyWindow else { return }
-            if window.makeFirstResponder(self) { wantsFocus = false }
+            // A text control uses the window's shared field editor as its actual
+            // responder. Selecting text activates that editor, rather than merely
+            // making the search control (or its SwiftUI wrapper) first responder.
+            selectText(nil)
+            if let editor = currentEditor(), window.firstResponder === editor {
+                wantsFocus = false
+            }
         }
     }
     @MainActor final class Coordinator: NSObject, NSSearchFieldDelegate {
@@ -51,7 +70,7 @@ struct TaskSearchField: NSViewRepresentable {
         init(_ parent: TaskSearchField) { self.parent = parent }
         @objc func changed(_ field: NSSearchField) {
             guard parent.text != field.stringValue else { return }
-            #if DEBUG
+            #if DEBUG || SEARCH_PROFILING
             SearchLatency.begin()
             #endif
             parent.text = field.stringValue
@@ -71,7 +90,7 @@ struct TaskSearchField: NSViewRepresentable {
     }
 }
 
-#if DEBUG
+#if DEBUG || SEARCH_PROFILING
 /// Opt-in local test instrumentation. Records durations only, never queries or task data.
 @MainActor private enum SearchLatency {
     static var started: ContinuousClock.Instant?

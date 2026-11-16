@@ -24,6 +24,7 @@ struct CaptureTextField: NSViewRepresentable {
     }
     func updateNSView(_ field: Field, context: Context) {
         context.coordinator.parent = self
+        field.placeholderString = placeholder
         if field.stringValue != text { field.stringValue = text }
         if field.focusToken != focusToken { field.focusToken = focusToken; field.requestFocus() }
     }
